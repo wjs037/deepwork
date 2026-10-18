@@ -1,0 +1,944 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#191919">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="DeepWork">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<title>DeepWork</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<style>
+:root{
+  --bg:#191919; --panel:#202020; --panel2:#262626; --line:#2f2f2f; --line2:#3a3a3a;
+  --text:#e6e6e6; --dim:#9b9b9b; --faint:#6b6b6b; --accent:#5b8def; --accent2:#7aa2ff;
+  --good:#4caf7a; --warn:#e0a03a; --bad:#e05a5a; --now:#ff5a5a;
+  --r:10px; --hour:56px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font:14px/1.45 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard",sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:6px 12px}
+button:hover{border-color:#555}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button.ghost{background:transparent;border-color:transparent;color:var(--dim)}
+button.ghost:hover{color:var(--text);background:var(--panel2)}
+button.danger{color:var(--bad)}
+input,select,textarea{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:7px 10px;width:100%}
+textarea{min-height:72px;resize:vertical}
+label{display:block;color:var(--dim);font-size:12px;margin:10px 0 4px}
+h2{font-size:15px;margin:0 0 10px;font-weight:650}
+.muted{color:var(--dim)} .faint{color:var(--faint)} .small{font-size:12px}
+.row{display:flex;gap:8px;align-items:center} .row.wrap{flex-wrap:wrap} .grow{flex:1}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;font-size:11.5px;
+  background:#333;color:#ddd;white-space:nowrap}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+
+/* 상단 */
+header{display:flex;align-items:center;gap:14px;padding:10px 18px;border-bottom:1px solid var(--line);
+  position:sticky;top:0;background:rgba(25,25,25,.94);backdrop-filter:blur(8px);z-index:20}
+.brand{font-weight:800;letter-spacing:-.2px;font-size:16px}
+.brand span{color:var(--accent2)}
+nav{display:flex;gap:2px}
+nav button{background:transparent;border:none;color:var(--dim);padding:7px 12px;border-radius:8px}
+nav button.on{background:var(--panel2);color:var(--text);font-weight:600}
+.season-pill{margin-left:auto;font-size:12.5px;color:var(--dim)}
+.season-pill b{color:var(--text)}
+main{padding:18px;max-width:1400px;margin:0 auto}
+
+/* 집중 진행 바 */
+#focusbar{display:none;align-items:center;gap:12px;padding:8px 18px;background:#1f2a44;border-bottom:1px solid #2c3d63;
+  position:sticky;top:49px;z-index:19;cursor:pointer}
+#focusbar.on{display:flex}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--now);animation:pulse 1.4s infinite}
+@keyframes pulse{50%{opacity:.3}}
+
+/* 오늘 */
+.today{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px}
+.datebar{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.datebar .title{font-size:20px;font-weight:750;margin-right:6px}
+.allday{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;min-height:4px}
+.allday .item{padding:4px 10px;border-radius:8px;background:var(--panel2);border:1px solid var(--line2);cursor:pointer;font-size:12.5px}
+.allday .item.done{opacity:.5;text-decoration:line-through}
+
+.grid{display:grid;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--panel)}
+.grid-head{display:contents}
+.grid-head div{padding:8px 6px;border-bottom:1px solid var(--line);font-size:12px;color:var(--dim);text-align:center;background:var(--panel)}
+.grid-head div.is-today{color:var(--accent2);font-weight:700}
+.hours{position:relative}
+.hours .h{height:var(--hour);font-size:10.5px;color:var(--faint);text-align:right;padding-right:6px;transform:translateY(-7px)}
+.daycol{position:relative;border-left:1px solid var(--line)}
+.daycol .slot{height:var(--hour);border-top:1px solid #262626}
+.daycol .slot:hover{background:rgba(91,141,239,.05)}
+.blk{position:absolute;left:3px;right:3px;border-radius:7px;padding:4px 7px;overflow:hidden;cursor:pointer;
+  font-size:12px;line-height:1.3;border-left:3px solid;box-shadow:0 1px 0 rgba(0,0,0,.25)}
+.blk .t{font-weight:600}
+.blk .m{opacity:.75;font-size:11px}
+.blk.done{opacity:.55}
+.blk.done .t{text-decoration:line-through}
+.blk.live{outline:2px solid var(--now);outline-offset:1px}
+.nowline{position:absolute;left:0;right:0;height:2px;background:var(--now);z-index:5}
+.nowline::before{content:"";position:absolute;left:-4px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--now)}
+
+.side{display:flex;flex-direction:column;gap:14px}
+.next .name{font-size:16px;font-weight:700;margin:4px 0}
+.list{display:flex;flex-direction:column}
+.list .li{display:flex;gap:8px;align-items:center;padding:7px 0;border-top:1px solid var(--line);cursor:pointer}
+.list .li:first-child{border-top:none}
+.dday{font-variant-numeric:tabular-nums;font-weight:700;font-size:12px;min-width:46px}
+.dday.soon{color:var(--warn)} .dday.urgent{color:var(--bad)}
+.kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.kpi .v{font-size:22px;font-weight:750;font-variant-numeric:tabular-nums}
+.kpi .l{font-size:12px;color:var(--dim)}
+.bar{height:7px;border-radius:99px;background:#303030;overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--accent);border-radius:99px}
+
+/* 목표 */
+.season-card{display:flex;gap:18px;align-items:center;margin-bottom:16px}
+.season-card .big{font-size:22px;font-weight:800}
+.objs{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px}
+.obj{display:flex;flex-direction:column;gap:8px;cursor:default}
+.obj .name{font-weight:650;font-size:14.5px;cursor:pointer}
+.obj select{width:auto;padding:3px 8px;font-size:12px}
+
+/* 스코어보드 */
+.score{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+.charts{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}
+.charts .card{min-height:260px}
+svg text{fill:var(--dim);font-size:10.5px}
+.heat{display:flex;gap:3px}
+.heat .col{display:flex;flex-direction:column;gap:3px}
+.heat .c{width:13px;height:13px;border-radius:3px;background:#2a2a2a}
+.hbar{display:grid;grid-template-columns:130px 1fr 52px;gap:8px;align-items:center;margin:7px 0;font-size:12.5px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{padding:7px 6px;border-top:1px solid var(--line);text-align:left}
+th{color:var(--dim);font-weight:500;font-size:12px;border-top:none}
+
+/* 리뷰 */
+.review{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.energy{display:flex;gap:6px}
+.energy button{width:40px}
+.energy button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+
+/* 모달 */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:50}
+.modal-bg.on{display:flex}
+.modal{width:min(520px,94vw);max-height:92vh;overflow:auto;background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:18px 20px}
+.modal .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.modal .three{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:10px}
+.modal .actions{display:flex;gap:8px;margin-top:16px}
+
+/* 집중 모드 */
+#focus{position:fixed;inset:0;background:radial-gradient(ellipse at 50% 30%,#1d2740,#0f1115 70%);z-index:60;display:none;
+  flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center}
+#focus.on{display:flex}
+#focus .fname{font-size:22px;font-weight:700;max-width:80vw}
+#focus .clock{font-size:96px;font-weight:200;font-variant-numeric:tabular-nums;letter-spacing:-2px}
+#focus .ring{position:relative;width:320px;height:320px;display:flex;align-items:center;justify-content:center}
+#focus .ring svg{position:absolute;inset:0;transform:rotate(-90deg)}
+#focus .ring .clock{font-size:64px}
+#focus .ctrl{display:flex;gap:10px}
+#focus .ctrl button{padding:10px 20px;font-size:15px;border-radius:10px}
+#focus .paused{color:var(--warn);font-weight:600;letter-spacing:2px}
+.stars button{font-size:22px;background:none;border:none;color:#555;padding:0 3px}
+.stars button.on{color:#ffc84a}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#333;padding:9px 16px;border-radius:9px;z-index:80;
+  opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.on{opacity:1}
+@media (max-width:1000px){.today,.review,.charts{grid-template-columns:1fr}.score{grid-template-columns:repeat(2,1fr)}}
+
+/* 로그인 */
+#auth{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:var(--bg);z-index:90;padding:20px}
+#auth.on{display:flex}
+#auth .box{width:min(360px,100%)}
+#auth .brand{font-size:28px;margin-bottom:6px}
+.sync{font-size:11px;color:var(--faint);margin-left:8px}
+.menu-btn{background:transparent;border:none;color:var(--dim);font-size:18px;padding:4px 8px}
+
+/* 폰 */
+.wide{overflow-x:auto}
+@media (max-width:700px){
+  :root{--hour:48px}
+  /* backdrop-filter가 있으면 fixed 자식(하단 탭바)이 header 기준으로 붙어버린다 */
+  header{padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top));top:0;backdrop-filter:none;background:var(--bg)}
+  .season-pill{font-size:11.5px}
+  .season-pill .hide-m{display:none}
+  nav{position:fixed;left:0;right:0;bottom:0;z-index:30;justify-content:space-around;background:rgba(25,25,25,.97);
+    border-top:1px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom));backdrop-filter:blur(8px)}
+  nav button{flex:1;font-size:12.5px;padding:8px 2px}
+  main{padding:12px 12px calc(80px + env(safe-area-inset-bottom))}
+  #focusbar{top:calc(49px + env(safe-area-inset-top))}
+  .datebar{flex-wrap:wrap}
+  .datebar .title{font-size:17px;width:100%}
+  .wide .grid{min-width:720px}
+  .season-card{flex-direction:column;align-items:stretch}
+  .modal{padding:16px;border-radius:14px 14px 0 0;align-self:flex-end;width:100%;max-height:88vh;padding-bottom:calc(16px + env(safe-area-inset-bottom))}
+  .modal .two,.modal .three{grid-template-columns:1fr}
+  #focus .ring{width:260px;height:260px}
+  #focus .ring .clock{font-size:52px}
+  #focus .ctrl{flex-wrap:wrap;justify-content:center}
+  .hbar{grid-template-columns:100px 1fr 46px}
+  .heat .c{width:10px;height:10px}
+  input,select,textarea{font-size:16px}  /* iOS 확대 방지 */
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Deep<span>Work</span></div>
+  <nav id="nav">
+    <button data-v="today">오늘</button>
+    <button data-v="week">주간</button>
+    <button data-v="goals">시즌·목표</button>
+    <button data-v="score">스코어보드</button>
+    <button data-v="review">리뷰</button>
+  </nav>
+  <div class="season-pill" id="seasonPill"></div>
+  <button class="menu-btn" data-act="menu" title="설정">⋯</button>
+</header>
+<div id="auth"><div class="box">
+  <div class="brand">Deep<span>Work</span></div>
+  <div class="muted small" style="margin-bottom:14px">맥과 폰에서 같은 계정으로 로그인하세요.</div>
+  <label>이메일</label><input id="a-email" type="email" autocomplete="username">
+  <label>비밀번호</label><input id="a-pw" type="password" autocomplete="current-password">
+  <div class="row" style="margin-top:14px"><button class="primary grow" data-act="login">로그인</button><button data-act="signup">처음이면 가입</button></div>
+  <div class="small muted" id="a-msg" style="margin-top:10px"></div>
+</div></div>
+<div id="focusbar"><span class="dot"></span><b id="fbName"></b><span id="fbTime" class="muted"></span>
+  <span class="grow"></span><span class="small muted">클릭해서 집중 화면 열기</span></div>
+<main id="main"></main>
+
+<div class="modal-bg" id="modalBg"><div class="modal" id="modal"></div></div>
+<div id="focus"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ───────────────────────── 데이터 ─────────────────────────
+let S = {seasons:[],objectives:[],blocks:[],sessions:[],reviews:[],settings:{}};
+const UI = {view: localStorage.getItem('dw.view') || 'today', day: today(), seasonId: null, reviewKind:'daily', reviewDay: today()};
+const CATS = ['Medical study','Research','Self-improvement','Health','App / product dev','Writing','Admin'];
+const CAT_KO = {'Medical study':'의학 공부','Research':'연구','Self-improvement':'자기계발','Health':'건강',
+  'App / product dev':'앱 개발','Writing':'글쓰기','Admin':'행정'};
+const CAT_COLOR = {'Medical study':'#5b8def','Research':'#b07cf0','Self-improvement':'#4caf7a','Health':'#e07a5a',
+  'App / product dev':'#3fb6c4','Writing':'#d8b04a','Admin':'#9b9b9b'};
+const TYPES = ['Focus block','Task','Test','Meeting','Personal'];
+const TYPE_KO = {'Focus block':'딥워크','Task':'할 일','Test':'시험','Meeting':'미팅','Personal':'개인'};
+const STATUSES = ['Not started','In progress','Achieved','Missed','Dropped'];
+const STATUS_KO = {'Not started':'시작 전','In progress':'진행 중','Achieved':'달성','Missed':'놓침','Dropped':'중단'};
+const DOW = ['일','월','화','수','목','금','토'];
+const DAY_START = 6, DAY_END = 24;
+
+// ── Supabase 데이터 계층 ──
+// 맥 로컬 버전의 REST 경로(api('PATCH','/blocks/:id') 등)를 그대로 받아 Supabase 호출로 바꾼다.
+// 그래서 아래 화면 코드는 로컬 버전과 같다. 권한은 DB의 RLS가 본인 행으로 막는다.
+const sb = supabase.createClient(DW_CONFIG.url, DW_CONFIG.key, {auth:{persistSession:true, autoRefreshToken:true}});
+const TBL = {seasons:'seasons', objectives:'objectives', blocks:'blocks', sessions:'focus_sessions'};
+const COLS = {
+  seasons:['name','start','end','theme'],
+  objectives:['season_id','name','category','deadline','target_h','status','notes','sort'],
+  blocks:['name','start','end','type','category','objective_id','notes','done','actual_h','deadline'],
+  focus_sessions:['block_id','started_at','ended_at','paused_at','paused_ms','rating','note'],
+  reviews:['kind','period','energy','wins','lessons','next','updated'],
+};
+const newId = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+Math.random()).replace(/-/g,'');
+function nowIso(){ const d=new Date(); return ymd(d)+'T'+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds()); }
+function pick(o, cols){ const r={}; for(const c of cols) if(o[c]!==undefined) r[c]=(c==='done')?!!o[c]:o[c]; return r; }
+async function q(p){ const {data, error} = await p; if(error){ toast(error.message); throw error; } return data; }
+async function all(table, order){
+  let out=[], from=0;
+  for(;;){ const d = await q(sb.from(table).select('*').order(order).range(from, from+999)); out=out.concat(d); if(d.length<1000) return out; from+=1000; }
+}
+async function fetchState(){
+  const [seasons, objectives, blocks, sessions, reviews, settings] = await Promise.all([
+    all('seasons','start'), all('objectives','sort'), all('blocks','start'), all('focus_sessions','started_at'),
+    all('reviews','period'), all('settings','key')]);
+  return {seasons, objectives, blocks, sessions, reviews, settings:Object.fromEntries(settings.map(r=>[r.key, r.value]))};
+}
+async function focusOp(action, body){
+  const t = nowIso();
+  const cur = (await q(sb.from('focus_sessions').select('*').is('ended_at', null).limit(1)))[0];
+  const since = s => new Date(t) - parse(s);
+  if(action==='start'){
+    if(cur) throw toast('이미 진행 중인 집중 세션이 있습니다');
+    return {session: await q(sb.from('focus_sessions').insert({id:newId(), block_id:body.block_id||null, started_at:t}).select().single())};
+  }
+  if(!cur) throw toast('진행 중인 세션이 없습니다');
+  let patch = null;
+  if(action==='pause' && !cur.paused_at) patch = {paused_at:t};
+  if(action==='resume' && cur.paused_at) patch = {paused_at:null, paused_ms:(cur.paused_ms||0)+since(cur.paused_at)};
+  if(action==='end'){
+    patch = {ended_at:t, paused_at:null, paused_ms:(cur.paused_ms||0)+(cur.paused_at?since(cur.paused_at):0), rating:body.rating??null, note:body.note||''};
+    if(cur.block_id && body.complete) await q(sb.from('blocks').update({done:true}).eq('id', cur.block_id));
+  }
+  if(patch) await q(sb.from('focus_sessions').update(patch).eq('id', cur.id));
+  return {ok:true};
+}
+async function api(method, path, body={}){
+  const parts = path.split('/').filter(Boolean);
+  if(method==='GET' && path==='/state') return fetchState();
+  if(parts[0]==='focus') return focusOp(parts[1], body);
+  if(path==='/reviews'){
+    await q(sb.from('reviews').upsert({...pick(body, COLS.reviews), updated:nowIso()}, {onConflict:'user_id,kind,period'}));
+    return {ok:true};
+  }
+  if(path==='/settings'){
+    await q(sb.from('settings').upsert(Object.entries(body).map(([key,value])=>({key, value})), {onConflict:'user_id,key'}));
+    return {ok:true};
+  }
+  const table = TBL[parts[0]], rid = parts[1];
+  if(!table) throw new Error('unknown '+path);
+  if(method==='POST') return q(sb.from(table).insert({...pick(body, COLS[table]), id:body.id||newId(), ...(table!=='focus_sessions'?{created:nowIso()}:{})}).select().single());
+  if(method==='PATCH') return q(sb.from(table).update(pick(body, COLS[table])).eq('id', rid).select().single());
+  if(method==='DELETE'){ await q(sb.from(table).delete().eq('id', rid)); return {ok:true}; }
+}
+let lastSync = null;
+async function load(){
+  S = await api('GET','/state'); lastSync = new Date(); render();
+}
+// 맥에서 바꾼 걸 폰에서 보려면: 앱으로 돌아올 때마다 + 2분마다 다시 읽는다
+document.addEventListener('visibilitychange', () => { if(!document.hidden && sbUser) load(); });
+setInterval(() => { if(!document.hidden && sbUser && !document.getElementById('modalBg').classList.contains('on')) load(); }, 120000);
+
+// ── 로그인 ──
+let sbUser = null;
+async function boot(){
+  const {data:{session}} = await sb.auth.getSession();
+  sbUser = session?.user || null;
+  document.getElementById('auth').classList.toggle('on', !sbUser);
+  if(!sbUser) return;
+  await load();
+  if(activeSession()) openFocus();
+  requestAnimationFrame(()=>{ const nl=document.querySelector('.nowline'); if(nl) nl.scrollIntoView({block:'center'}); });
+}
+async function authAction(kind){
+  const email=document.getElementById('a-email').value.trim(), password=document.getElementById('a-pw').value;
+  const msg=document.getElementById('a-msg');
+  if(!email || password.length<6){ msg.textContent='이메일과 6자 이상 비밀번호를 적어주세요'; return; }
+  msg.textContent='…';
+  const {data, error} = kind==='signup' ? await sb.auth.signUp({email, password}) : await sb.auth.signInWithPassword({email, password});
+  if(error){ msg.textContent = error.message; return; }
+  if(kind==='signup' && !data.session){ msg.textContent='확인 메일을 보냈어요. 메일의 링크를 누른 뒤 여기서 로그인하세요.'; return; }
+  boot();
+}
+
+// ── 설정 메뉴: 가져오기 / 내보내기 / 로그아웃 ──
+function menuModal(){
+  openModal(`<h2>설정</h2>
+    <div class="small muted">로그인: ${esc(sbUser?.email||'')} · 마지막 동기화 ${lastSync?hm(lastSync):'—'}</div>
+    <label>백업</label><div class="row wrap"><button data-act="export">JSON 내보내기</button>
+      <label class="row" style="margin:0"><span class="small muted">가져오기 (맥 버전 deepwork-export.json 또는 백업 파일)</span></label>
+      <input type="file" id="import-file" accept=".json,application/json"></div>
+    <div class="small faint" style="margin-top:6px">가져오기는 같은 id 행을 덮어써서 여러 번 해도 중복이 생기지 않아요.</div>
+    <div class="actions"><button class="danger" data-act="logout">로그아웃</button><span class="grow"></span>
+      <button data-act="sync">지금 동기화</button><button data-act="close">닫기</button></div>`);
+  document.getElementById('import-file').onchange = e => importFile(e.target.files[0]);
+}
+async function importFile(file){
+  if(!file) return;
+  const data = JSON.parse(await file.text());
+  // 맥 버전 내보내기는 focus_sessions, 앱 내보내기는 sessions 키를 쓴다
+  const sets = [['seasons',data.seasons],['objectives',data.objectives],['blocks',data.blocks],
+    ['focus_sessions',data.focus_sessions||data.sessions],['reviews',data.reviews]];
+  let n=0;
+  for(const [table, rows] of sets){
+    if(!rows?.length) continue;
+    const clean = rows.map(r=>({id:r.id, ...pick(r, COLS[table]), ...(r.created?{created:r.created}:{})}));
+    for(let i=0;i<clean.length;i+=500){
+      await q(sb.from(table).upsert(clean.slice(i,i+500), table==='reviews'?{onConflict:'user_id,kind,period'}:{onConflict:'id'}));
+    }
+    n+=clean.length;
+  }
+  const st = Array.isArray(data.settings) ? Object.fromEntries(data.settings.map(r=>[r.key, typeof r.value==='string'?JSON.parse(r.value):r.value])) : (data.settings||{});
+  if(Object.keys(st).length) await api('POST','/settings', st);
+  closeModal(); await load(); toast(`${n}행 가져옴`);
+}
+function exportFile(){
+  const blob = new Blob([JSON.stringify({...S, exported:nowIso()}, null, 1)], {type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `deepwork-backup-${today()}.json`; a.click();
+}
+
+// ───────────────────────── 날짜 유틸 ─────────────────────────
+function pad(n){return String(n).padStart(2,'0')}
+function ymd(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
+function today(){return ymd(new Date())}
+function parse(s){ if(!s) return null; return s.length<=10 ? new Date(s+'T00:00') : new Date(s); }
+function addDays(s,n){const d=parse(s);d.setDate(d.getDate()+n);return ymd(d)}
+function hm(d){return pad(d.getHours())+':'+pad(d.getMinutes())}
+function hasTime(s){return !!s && s.length>10}
+function weekStart(s){const d=parse(s);const w=(d.getDay()+6)%7;d.setDate(d.getDate()-w);return ymd(d)}
+function daysBetween(a,b){return Math.round((parse(b)-parse(a))/864e5)}
+function fmtDay(s){const d=parse(s);return `${d.getMonth()+1}월 ${d.getDate()}일 (${DOW[d.getDay()]})`}
+function dday(s){const n=daysBetween(today(),s);return n===0?'D-day':n>0?'D-'+n:'D+'+(-n)}
+function ddayCls(s){const n=daysBetween(today(),s);return n<0?'faint':n<=3?'urgent':n<=10?'soon':''}
+function fmtH(h){return (Math.round(h*10)/10).toString().replace(/\.0$/,'')+'h'}
+function fmtClock(ms){ms=Math.max(0,ms);const s=Math.floor(ms/1000);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;
+  return (h?h+':'+pad(m):m)+':'+pad(x)}
+const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// ───────────────────────── 시간 계산 ─────────────────────────
+// 노션 규칙 그대로: 시간은 블록의 시작~끝에서 나오고, Actual h를 적었으면 그게 우선.
+// 여기에 더해 집중 타이머로 잰 세션이 있으면 그 실측을 쓴다.
+const blockDay = b => b.start.slice(0,10);
+function plannedH(b){ if(!hasTime(b.start)||!hasTime(b.end)) return 0; return Math.max(0,(parse(b.end)-parse(b.start))/36e5); }
+function sessionMs(x, now=Date.now()){
+  const end = x.ended_at ? parse(x.ended_at).getTime() : now;
+  const pausedNow = (!x.ended_at && x.paused_at) ? now - parse(x.paused_at).getTime() : 0;
+  return Math.max(0, end - parse(x.started_at).getTime() - (x.paused_ms||0) - pausedNow);
+}
+function sessionsOf(b){return S.sessions.filter(x=>x.block_id===b.id)}
+function loggedH(b){
+  if(b.actual_h!=null && b.actual_h!=='') return Number(b.actual_h);
+  const ss = sessionsOf(b).filter(x=>x.ended_at);
+  if(ss.length) return ss.reduce((a,x)=>a+sessionMs(x),0)/36e5;
+  return b.done ? plannedH(b) : 0;
+}
+const isDeep = b => b.type==='Focus block';
+// 특정 날짜의 딥워크 시간 (블록 + 블록 없는 자유 세션)
+function deepHoursByDay(){
+  const m = {};
+  for(const b of S.blocks) if(isDeep(b)){ const h=loggedH(b); if(h) m[blockDay(b)]=(m[blockDay(b)]||0)+h; }
+  for(const x of S.sessions) if(!x.block_id && x.ended_at){ const d=x.started_at.slice(0,10); m[d]=(m[d]||0)+sessionMs(x)/36e5; }
+  return m;
+}
+function objHours(o){ return S.blocks.filter(b=>b.objective_id===o.id).reduce((a,b)=>a+loggedH(b),0); }
+function activeSession(){ return S.sessions.find(x=>!x.ended_at) || null; }
+function currentSeason(){
+  if(UI.seasonId) return S.seasons.find(s=>s.id===UI.seasonId);
+  const t=today(); return S.seasons.find(s=>s.start<=t && t<=s.end) || S.seasons[S.seasons.length-1] || null;
+}
+function streak(){
+  const m=deepHoursByDay(); let n=0, d=today();
+  if(!m[d]) d=addDays(d,-1);          // 오늘 아직 안 했으면 어제부터 센다
+  while(m[d]>0){n++; d=addDays(d,-1);}
+  return n;
+}
+function overdue(){
+  const t=today();
+  return S.blocks.filter(b=>!b.done && blockDay(b)<t && ['Focus block','Task'].includes(b.type))
+    .sort((a,b)=>a.start<b.start?-1:1);
+}
+
+// ───────────────────────── 렌더 ─────────────────────────
+function render(){
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on', b.dataset.v===UI.view));
+  const se = currentSeason();
+  document.getElementById('seasonPill').innerHTML = se
+    ? `<b class="hide-m">${esc(se.name)} · </b>${daysBetween(today(),se.end)>=0?dday(se.end):'종료'} · 🔥 ${streak()}일` : '';
+  const v = {today:viewToday, week:viewWeek, goals:viewGoals, score:viewScore, review:viewReview}[UI.view] || viewToday;
+  document.getElementById('main').innerHTML = v();
+  renderFocusBar();
+  if(UI.view==='today'||UI.view==='week'){ const g=document.querySelector('.grid-scroll'); if(g && !g.dataset.s){ g.dataset.s=1; } }
+}
+
+// 하루치 시간축 블록 배치 (겹치면 칸 나눔)
+function layoutDay(list){
+  const items = list.filter(b=>hasTime(b.start)).map(b=>{
+    const s=parse(b.start), e=hasTime(b.end)?parse(b.end):new Date(s.getTime()+30*6e4);
+    return {b, s:s.getHours()+s.getMinutes()/60, e:Math.max(e.getHours()+e.getMinutes()/60 + (ymd(e)>ymd(s)?24:0), s.getHours()+s.getMinutes()/60+0.4)};
+  }).sort((a,c)=>a.s-c.s||c.e-a.e);
+  let cluster=[], end=-1; const out=[];
+  const flush=()=>{ const cols=[]; for(const it of cluster){ let i=cols.findIndex(c=>c<=it.s); if(i<0){i=cols.length;cols.push(0)} cols[i]=it.e; it.col=i; }
+    cluster.forEach(it=>it.ncol=cols.length); out.push(...cluster); cluster=[]; };
+  for(const it of items){ if(it.s>=end && cluster.length) flush(); cluster.push(it); end=Math.max(end,it.e); }
+  if(cluster.length) flush();
+  return out;
+}
+
+function gridHTML(days){
+  const hourPx = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--hour'));
+  const live = activeSession();
+  const t = today(); const nowD = new Date();
+  let head = `<div class="grid-head"><div></div>${days.map(d=>`<div class="${d===t?'is-today':''}">${days.length>1?`${DOW[parse(d).getDay()]} ${parse(d).getDate()}`:fmtDay(d)}</div>`).join('')}</div>`;
+  let hours = `<div class="hours">${Array.from({length:DAY_END-DAY_START},(_,i)=>`<div class="h">${i?pad(DAY_START+i)+':00':''}</div>`).join('')}</div>`;
+  let cols = days.map(d=>{
+    const items = layoutDay(S.blocks.filter(b=>blockDay(b)===d));
+    const slots = Array.from({length:DAY_END-DAY_START},(_,i)=>`<div class="slot" data-day="${d}" data-h="${DAY_START+i}"></div>`).join('');
+    const blks = items.map(it=>{
+      const top=(Math.max(it.s,DAY_START)-DAY_START)*hourPx, h=Math.max(18,(Math.min(it.e,DAY_END)-Math.max(it.s,DAY_START))*hourPx-2);
+      const c=CAT_COLOR[it.b.category]||'#777'; const w=100/it.ncol;
+      const obj=S.objectives.find(o=>o.id===it.b.objective_id);
+      return `<div class="blk ${it.b.done?'done':''} ${live&&live.block_id===it.b.id?'live':''}" data-id="${it.b.id}"
+        style="top:${top}px;height:${h}px;left:calc(${w*it.col}% + 3px);width:calc(${w}% - 6px);background:${c}22;border-color:${c}">
+        <div class="t">${esc(it.b.name)}</div>
+        <div class="m">${hm(parse(it.b.start))}${hasTime(it.b.end)?'–'+hm(parse(it.b.end)):''}${it.b.type!=='Focus block'?' · '+TYPE_KO[it.b.type]:''}${obj&&h>44?' · '+esc(obj.name):''}</div></div>`;
+    }).join('');
+    const nl = d===t ? `<div class="nowline" style="top:${(nowD.getHours()+nowD.getMinutes()/60-DAY_START)*hourPx}px"></div>` : '';
+    return `<div class="daycol">${slots}${blks}${nl}</div>`;
+  }).join('');
+  return `<div class="grid" style="grid-template-columns:48px repeat(${days.length},1fr)">${head}${hours}${cols}</div>`;
+}
+
+function alldayHTML(d){
+  const items = S.blocks.filter(b=>blockDay(b)===d && !hasTime(b.start));
+  return `<div class="allday">${items.map(b=>`<div class="item ${b.done?'done':''}" data-id="${b.id}">
+    ${b.type==='Test'?'📝':b.type==='Task'?'☑︎':'•'} ${esc(b.name)}</div>`).join('')}</div>`;
+}
+
+function viewToday(){
+  const d = UI.day, t = today();
+  const dayBlocks = S.blocks.filter(b=>blockDay(b)===d);
+  const deep = dayBlocks.filter(isDeep);
+  const planned = deep.reduce((a,b)=>a+plannedH(b),0);
+  const logged = (deepHoursByDay()[d]||0);
+  // 지금/다음 블록
+  const now = new Date();
+  const timed = S.blocks.filter(b=>blockDay(b)===t && hasTime(b.start) && !b.done && b.type!=='Personal')
+    .sort((a,b)=>a.start<b.start?-1:1);
+  const cur = timed.find(b=>parse(b.start)<=now && (!hasTime(b.end)||parse(b.end)>now));
+  const nxt = cur || timed.find(b=>parse(b.start)>now);
+  const live = activeSession();
+  const deadlines = S.blocks.filter(b=>(b.deadline||b.type==='Test') && !b.done && daysBetween(t,b.deadline||blockDay(b))>=0 && daysBetween(t,b.deadline||blockDay(b))<=21)
+    .sort((a,b)=>(a.deadline||blockDay(a))<(b.deadline||blockDay(b))?-1:1).slice(0,8);
+  const od = overdue();
+  return `<div class="today">
+   <div>
+    <div class="datebar">
+      <span class="title">${d===t?'오늘':''} ${fmtDay(d)}</span>
+      <button class="ghost" data-act="day" data-n="-1">◀</button>
+      <button data-act="day" data-n="0">오늘</button>
+      <button class="ghost" data-act="day" data-n="1">▶</button>
+      <span class="grow"></span>
+      <button class="primary" data-act="new-block" data-day="${d}">+ 블록</button>
+    </div>
+    ${alldayHTML(d)}
+    ${gridHTML([d])}
+   </div>
+   <div class="side">
+    <div class="card next">
+      ${live ? `<div class="small muted">집중 중</div><div class="name">${esc(S.blocks.find(b=>b.id===live.block_id)?.name||'자유 집중')}</div>
+        <button class="primary" data-act="open-focus">집중 화면 열기</button>`
+      : nxt ? `<div class="small muted">${cur?'지금 블록':'다음 블록'} · ${hm(parse(nxt.start))}${hasTime(nxt.end)?'–'+hm(parse(nxt.end)):''}</div>
+        <div class="name">${esc(nxt.name)}</div>
+        <div class="row" style="margin-top:8px"><button class="primary" data-act="focus" data-id="${nxt.id}">▶ 집중 시작</button>
+        <button class="ghost" data-act="edit" data-id="${nxt.id}">편집</button></div>`
+      : `<div class="small muted">오늘 남은 블록 없음</div><div class="name">자유 집중</div>
+        <button data-act="focus" data-id="">▶ 블록 없이 집중</button>`}
+    </div>
+    <div class="card">
+      <h2>${d===t?'오늘':'이날'} 딥워크</h2>
+      <div class="kpis">
+        <div class="kpi"><div class="v">${fmtH(logged)}</div><div class="l">기록</div></div>
+        <div class="kpi"><div class="v">${fmtH(planned)}</div><div class="l">계획</div></div>
+      </div>
+      <div class="bar" style="margin-top:10px"><i style="width:${planned?Math.min(100,logged/planned*100):0}%"></i></div>
+      <div class="small muted" style="margin-top:6px">${deep.filter(b=>b.done).length}/${deep.length} 블록 완료</div>
+    </div>
+    <div class="card">
+      <h2>다가오는 마감·시험</h2>
+      <div class="list">${deadlines.map(b=>{const dl=b.deadline||blockDay(b);return `<div class="li" data-act="edit" data-id="${b.id}">
+        <span class="dday ${ddayCls(dl)}">${dday(dl)}</span><span class="grow">${esc(b.name)}</span></div>`}).join('') || '<div class="muted small">3주 안에 마감 없음</div>'}</div>
+    </div>
+    ${od.length?`<div class="card"><h2>🔁 밀린 일 <span class="chip">${od.length}</span></h2>
+      <div class="list">${od.slice(0,5).map(b=>`<div class="li"><span class="faint small">${fmtDay(blockDay(b)).replace(/ \(.\)/,'')}</span>
+        <span class="grow" data-act="edit" data-id="${b.id}">${esc(b.name)}</span>
+        <button class="ghost small" data-act="to-today" data-id="${b.id}">오늘로</button></div>`).join('')}</div>
+      ${od.length>5?`<button class="ghost small" data-act="goto" data-v="review">전체 보기 →</button>`:''}</div>`:''}
+   </div>
+  </div>`;
+}
+
+function viewWeek(){
+  const ws = weekStart(UI.day); const days = Array.from({length:7},(_,i)=>addDays(ws,i));
+  const m = deepHoursByDay(); const tot = days.reduce((a,d)=>a+(m[d]||0),0);
+  return `<div class="datebar">
+      <span class="title">${fmtDay(ws).replace(/ \(.\)/,'')} 주</span>
+      <button class="ghost" data-act="day" data-n="-7">◀</button>
+      <button data-act="day" data-n="0">이번 주</button>
+      <button class="ghost" data-act="day" data-n="7">▶</button>
+      <span class="chip">딥워크 ${fmtH(tot)}</span>
+      <span class="grow"></span><button class="primary" data-act="new-block" data-day="${UI.day}">+ 블록</button></div>
+    <div class="wide"><div class="grid" style="grid-template-columns:48px repeat(7,1fr);margin-bottom:8px;border-bottom:none;border-radius:var(--r) var(--r) 0 0">
+      <div></div>${days.map(d=>`<div style="padding:6px;border-left:1px solid var(--line)">${alldayHTML(d).replace('class="allday"','class="allday" style="margin:0"')}</div>`).join('')}</div>
+    ${gridHTML(days)}</div>`;
+}
+
+function viewGoals(){
+  const se = currentSeason();
+  const objs = S.objectives.filter(o=> se ? o.season_id===se.id : true);
+  const seasonOpts = S.seasons.map(s=>`<option value="${s.id}" ${se&&s.id===se.id?'selected':''}>${esc(s.name)}</option>`).join('');
+  let head = '<div class="card season-card"><div class="grow muted">시즌이 없습니다.</div><button class="primary" data-act="new-season">+ 시즌</button></div>';
+  if(se){
+    const total=daysBetween(se.start,se.end)+1, gone=Math.min(total,Math.max(0,daysBetween(se.start,today())+1));
+    const wk = Math.ceil(gone/7), wks = Math.ceil(total/7);
+    const hrs = Object.entries(deepHoursByDay()).filter(([d])=>d>=se.start&&d<=se.end).reduce((a,[,h])=>a+h,0);
+    head = `<div class="card season-card">
+      <div><div class="small muted">시즌</div><div class="big">${esc(se.name)}</div><div class="small muted">${se.start} → ${se.end}</div></div>
+      <div class="grow"><div class="small muted" style="margin-bottom:6px">${esc(se.theme||'')}</div>
+        <div class="bar"><i style="width:${gone/total*100}%"></i></div>
+        <div class="row small muted" style="margin-top:6px"><span>${wk}/${wks}주차</span><span class="grow"></span><span>${dday(se.end)}</span></div></div>
+      <div class="kpi"><div class="v">${fmtH(hrs)}</div><div class="l">시즌 딥워크</div></div>
+      <div class="row"><select data-act="pick-season" style="width:auto">${seasonOpts}</select>
+        <button class="ghost" data-act="edit-season" data-id="${se.id}">편집</button><button data-act="new-season">+ 시즌</button></div>
+    </div>`;
+  }
+  const card = o => {
+    const h=objHours(o), bl=S.blocks.filter(b=>b.objective_id===o.id), done=bl.filter(b=>b.done).length;
+    const pct = o.target_h ? Math.min(100,h/o.target_h*100) : 0;
+    return `<div class="card obj">
+      <div class="row"><span class="name grow" data-act="edit-obj" data-id="${o.id}">${esc(o.name)}</span>
+        ${o.deadline?`<span class="dday ${ddayCls(o.deadline)}">${dday(o.deadline)}</span>`:''}</div>
+      <div class="row wrap">${o.category?`<span class="chip" style="background:${CAT_COLOR[o.category]||'#444'}33;color:${CAT_COLOR[o.category]||'#ddd'}">${CAT_KO[o.category]||esc(o.category)}</span>`:''}
+        <select data-act="obj-status" data-id="${o.id}">${STATUSES.map(s=>`<option value="${s}" ${o.status===s?'selected':''}>${STATUS_KO[s]}</option>`).join('')}</select>
+        <span class="grow"></span><span class="small muted">블록 ${done}/${bl.length}</span></div>
+      <div><div class="row small"><b>${fmtH(h)}</b><span class="muted">${o.target_h?' / '+fmtH(o.target_h):' · 목표 시간 없음'}</span>
+        <span class="grow"></span>${o.target_h?`<span class="muted">${Math.round(pct)}%</span>`:''}</div>
+        <div class="bar" style="margin-top:5px"><i style="width:${pct}%;background:${CAT_COLOR[o.category]||'var(--accent)'}"></i></div></div>
+      ${o.notes?`<div class="small muted">${esc(o.notes)}</div>`:''}
+    </div>`;
+  };
+  const active = objs.filter(o=>!['Achieved','Missed','Dropped'].includes(o.status));
+  const closed = objs.filter(o=>['Achieved','Missed','Dropped'].includes(o.status));
+  return `${head}
+    <div class="row" style="margin-bottom:10px"><h2 style="margin:0">목표</h2><span class="chip">${active.length}</span><span class="grow"></span>
+      <button class="primary" data-act="new-obj">+ 목표</button></div>
+    <div class="objs">${active.map(card).join('')||'<div class="muted">목표를 추가하세요.</div>'}</div>
+    ${closed.length?`<h2 style="margin:22px 0 10px">마감된 목표</h2><div class="objs">${closed.map(card).join('')}</div>`:''}`;
+}
+
+function viewScore(){
+  const m = deepHoursByDay(); const t=today(); const se=currentSeason();
+  const ws = weekStart(t);
+  const sumRange=(a,b)=>Object.entries(m).filter(([d])=>d>=a&&d<=b).reduce((x,[,h])=>x+h,0);
+  const thisWeek=sumRange(ws,addDays(ws,6)), lastWeek=sumRange(addDays(ws,-7),addDays(ws,-1));
+  const seasonH = se?sumRange(se.start,se.end):Object.values(m).reduce((a,b)=>a+b,0);
+  // 주간 막대 12주
+  const weeks = Array.from({length:12},(_,i)=>addDays(ws,-7*(11-i)));
+  const wv = weeks.map(w=>sumRange(w,addDays(w,6))); const wmax=Math.max(5,...wv);
+  const W=560,H=200,pl=28,pb=22,bw=(W-pl)/12;
+  const goalW = S.settings.weekly_goal_h || 20;
+  const bars = wv.map((v,i)=>{const h=(H-pb-10)*v/wmax; return `<rect x="${pl+i*bw+5}" y="${H-pb-h}" width="${bw-10}" height="${h}" rx="4" fill="${i===11?'var(--accent2)':'#4a6fbf'}"/>
+    <text x="${pl+i*bw+bw/2}" y="${H-6}" text-anchor="middle">${parse(weeks[i]).getMonth()+1}/${parse(weeks[i]).getDate()}</text>
+    ${v?`<text x="${pl+i*bw+bw/2}" y="${H-pb-h-4}" text-anchor="middle" style="fill:#ccc">${Math.round(v*10)/10}</text>`:''}`}).join('');
+  const gy = H-pb-(H-pb-10)*goalW/wmax;
+  const goalLine = goalW<=wmax?`<line x1="${pl}" x2="${W}" y1="${gy}" y2="${gy}" stroke="#e0a03a" stroke-dasharray="4 4"/><text x="${pl}" y="${gy-4}" style="fill:#e0a03a">목표 ${goalW}h</text>`:'';
+  // 카테고리
+  const byCat={}; for(const b of S.blocks) if(isDeep(b)&&(!se||(blockDay(b)>=se.start&&blockDay(b)<=se.end))){const h=loggedH(b); if(h) byCat[b.category||'기타']=(byCat[b.category||'기타']||0)+h;}
+  const cmax=Math.max(1,...Object.values(byCat));
+  const catHTML = Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c,h])=>`<div class="hbar"><span>${CAT_KO[c]||esc(c)}</span>
+    <div class="bar"><i style="width:${h/cmax*100}%;background:${CAT_COLOR[c]||'#888'}"></i></div><span class="muted">${fmtH(h)}</span></div>`).join('')||'<div class="muted">기록 없음</div>';
+  // 히트맵 20주
+  const hs = addDays(ws,-7*19);
+  const heat = Array.from({length:20},(_,w)=>`<div class="col">${Array.from({length:7},(_,d)=>{const day=addDays(hs,w*7+d);const h=m[day]||0;
+    const a = h? Math.min(1,.25+h/6):0; return `<div class="c" title="${day} · ${fmtH(h)}" style="${h?`background:rgba(91,141,239,${a})`:''}${day>t?';opacity:.25':''}"></div>`}).join('')}</div>`).join('');
+  const objs = S.objectives.filter(o=>!se||o.season_id===se.id);
+  return `<div class="score">
+     <div class="card kpi"><div class="v">${fmtH(thisWeek)}</div><div class="l">이번 주 · 지난주 ${fmtH(lastWeek)}</div></div>
+     <div class="card kpi"><div class="v">${fmtH(m[t]||0)}</div><div class="l">오늘</div></div>
+     <div class="card kpi"><div class="v">${fmtH(seasonH)}</div><div class="l">${se?esc(se.name):'전체'} 누적</div></div>
+     <div class="card kpi"><div class="v">🔥 ${streak()}일</div><div class="l">연속 딥워크</div></div>
+   </div>
+   <div class="charts">
+     <div class="card"><div class="row"><h2 class="grow">주간 딥워크</h2>
+       <span class="small muted">주간 목표</span><input type="number" min="1" step="1" value="${goalW}" data-act="weekly-goal" style="width:70px;padding:3px 8px"></div>
+       <svg viewBox="0 0 ${W} ${H}" width="100%">${goalLine}${bars}</svg></div>
+     <div class="card"><h2>카테고리별 (${se?esc(se.name):'전체'})</h2>${catHTML}</div>
+   </div>
+   <div class="charts" style="margin-top:14px">
+     <div class="card"><h2>최근 20주</h2><div class="row" style="align-items:flex-start;gap:6px">
+       <div class="small faint" style="display:flex;flex-direction:column;gap:3px;line-height:13px">${['월','','수','','금','','일'].map(x=>`<span>${x||'&nbsp;'}</span>`).join('')}</div>
+       <div class="heat">${heat}</div></div></div>
+     <div class="card"><h2>목표별</h2><table><tr><th>목표</th><th>시간</th><th>목표h</th><th>상태</th></tr>
+       ${objs.map(o=>{const h=objHours(o);return `<tr><td>${esc(o.name)}</td><td>${fmtH(h)}</td><td class="muted">${o.target_h?fmtH(o.target_h):'—'}</td><td class="muted small">${STATUS_KO[o.status]||''}</td></tr>`}).join('')}</table></div>
+   </div>`;
+}
+
+function viewReview(){
+  const kind = UI.reviewKind;
+  const tabs = `<div class="row" style="margin-bottom:14px"><button class="${kind==='daily'?'primary':''}" data-act="rkind" data-k="daily">일간 리뷰</button>
+    <button class="${kind==='weekly'?'primary':''}" data-act="rkind" data-k="weekly">주간 리뷰</button>
+    <span class="grow"></span>
+    <button class="ghost" data-act="rday" data-n="${kind==='daily'?-1:-7}">◀</button>
+    <b>${kind==='daily'?fmtDay(UI.reviewDay):fmtDay(weekStart(UI.reviewDay)).replace(/ \(.\)/,'')+' 주'}</b>
+    <button class="ghost" data-act="rday" data-n="${kind==='daily'?1:7}">▶</button></div>`;
+  const period = kind==='daily' ? UI.reviewDay : weekStart(UI.reviewDay);
+  const rv = S.reviews.find(r=>r.kind===kind && r.period===period) || {};
+  const days = kind==='daily' ? [period] : Array.from({length:7},(_,i)=>addDays(period,i));
+  const bl = S.blocks.filter(b=>days.includes(blockDay(b)) && b.type!=='Personal').sort((a,b)=>a.start<b.start?-1:1);
+  const deep = bl.filter(isDeep);
+  const planned = deep.reduce((a,b)=>a+plannedH(b),0); const logged = days.reduce((a,d)=>a+(deepHoursByDay()[d]||0),0);
+  const missed = bl.filter(b=>!b.done && blockDay(b)<=today());
+  const objLines = kind==='weekly' ? S.objectives.map(o=>{const h=S.blocks.filter(b=>b.objective_id===o.id&&days.includes(blockDay(b))).reduce((a,b)=>a+loggedH(b),0);return [o,h]}).filter(x=>x[1]>0) : [];
+  const od = overdue();
+  const sessions = S.sessions.filter(x=>x.ended_at && days.includes(x.started_at.slice(0,10)));
+  const avgR = sessions.filter(x=>x.rating).length ? (sessions.reduce((a,x)=>a+(x.rating||0),0)/sessions.filter(x=>x.rating).length).toFixed(1) : '—';
+  return `${tabs}<div class="review">
+    <div class="side">
+      <div class="card"><h2>계획 vs 실제</h2>
+        <div class="kpis"><div class="kpi"><div class="v">${fmtH(logged)}</div><div class="l">딥워크 기록</div></div>
+        <div class="kpi"><div class="v">${fmtH(planned)}</div><div class="l">계획</div></div>
+        <div class="kpi"><div class="v">${deep.filter(b=>b.done).length}/${deep.length}</div><div class="l">블록 완료</div></div>
+        <div class="kpi"><div class="v">${avgR}</div><div class="l">평균 집중도 (${sessions.length}세션)</div></div></div></div>
+      <div class="card"><h2>블록</h2><div class="list">${bl.map(b=>`<div class="li">
+        <input type="checkbox" style="width:auto" data-act="toggle-done" data-id="${b.id}" ${b.done?'checked':''}>
+        <span class="faint small" style="min-width:${kind==='daily'?44:86}px">${kind==='weekly'?DOW[parse(b.start).getDay()]+' ':''}${hasTime(b.start)?hm(parse(b.start)):'종일'}</span>
+        <span class="grow" data-act="edit" data-id="${b.id}">${esc(b.name)}</span>
+        <span class="small muted">${isDeep(b)?fmtH(loggedH(b)):TYPE_KO[b.type]}</span></div>`).join('')||'<div class="muted small">블록 없음</div>'}</div></div>
+      ${kind==='weekly'&&objLines.length?`<div class="card"><h2>이번 주 목표별 시간</h2>${objLines.map(([o,h])=>`<div class="hbar"><span>${esc(o.name)}</span><div class="bar"><i style="width:${Math.min(100,h/Math.max(...objLines.map(x=>x[1]))*100)}%"></i></div><span class="muted">${fmtH(h)}</span></div>`).join('')}</div>`:''}
+    </div>
+    <div class="side">
+      <div class="card"><h2>${kind==='daily'?'오늘':'이번 주'} 돌아보기</h2>
+        <label>에너지</label><div class="energy">${[1,2,3,4,5].map(n=>`<button class="${rv.energy===n?'on':''}" data-act="energy" data-n="${n}">${n}</button>`).join('')}</div>
+        <label>잘 된 것</label><textarea id="rv-wins">${esc(rv.wins)}</textarea>
+        <label>배운 것 · 방해 요인</label><textarea id="rv-lessons">${esc(rv.lessons)}</textarea>
+        <label>${kind==='daily'?'내일':'다음 주'} 가장 중요한 일</label><textarea id="rv-next">${esc(rv.next)}</textarea>
+        <div class="row" style="margin-top:12px"><button class="primary" data-act="save-review" data-kind="${kind}" data-period="${period}">저장</button>
+          ${rv.updated?`<span class="small faint">저장됨 ${rv.updated.replace('T',' ').slice(5,16)}</span>`:''}</div></div>
+      <div class="card"><h2>🔁 밀린 일 <span class="chip">${od.length}</span></h2>
+        <div class="list">${od.map(b=>`<div class="li"><span class="faint small" style="min-width:56px">${blockDay(b).slice(5).replace('-','/')}</span>
+          <span class="grow" data-act="edit" data-id="${b.id}">${esc(b.name)}</span>
+          <button class="ghost small" data-act="to-today" data-id="${b.id}">오늘로</button>
+          <button class="ghost small" data-act="to-tomorrow" data-id="${b.id}">내일로</button>
+          <button class="ghost small" data-act="toggle-done" data-id="${b.id}">완료</button></div>`).join('')||'<div class="muted small">밀린 일 없음 👏</div>'}</div></div>
+    </div></div>`;
+}
+
+// ───────────────────────── 모달 ─────────────────────────
+function openModal(html){ document.getElementById('modal').innerHTML=html; document.getElementById('modalBg').classList.add('on');
+  setTimeout(()=>document.querySelector('#modal input[autofocus]')?.focus(),30); }
+function closeModal(){ document.getElementById('modalBg').classList.remove('on'); }
+const opts = (list, cur, ko={}, blank) => (blank?`<option value="">${blank}</option>`:'')+list.map(v=>`<option value="${esc(v)}" ${v===cur?'selected':''}>${esc(ko[v]||v)}</option>`).join('');
+
+function blockModal(b){
+  const isNew = !b.id;
+  const day = blockDay(b), allday = !hasTime(b.start);
+  const st = hasTime(b.start)?b.start.slice(11,16):'', en = hasTime(b.end)?b.end.slice(11,16):'';
+  const objs = S.objectives.filter(o=>!['Achieved','Missed','Dropped'].includes(o.status) || o.id===b.objective_id);
+  const ss = isNew?[]:sessionsOf(b).filter(x=>x.ended_at);
+  openModal(`<h2>${isNew?'새 블록':'블록 편집'}</h2>
+    <label>이름</label><input id="f-name" value="${esc(b.name||'')}" autofocus placeholder="예: 예방의학 | 역학적 연구방법">
+    <div class="two"><div><label>종류</label><select id="f-type">${opts(TYPES,b.type||'Focus block',TYPE_KO)}</select></div>
+      <div><label>카테고리</label><select id="f-cat">${opts(CATS,b.category,CAT_KO,'—')}</select></div></div>
+    <label>목표</label><select id="f-obj">${opts(objs.map(o=>o.id),b.objective_id,Object.fromEntries(objs.map(o=>[o.id,o.name])),'— 연결 안 함')}</select>
+    <div class="three"><div><label>날짜</label><input type="date" id="f-day" value="${day}"></div>
+      <div><label>시작</label><input type="time" id="f-st" value="${st}" ${allday?'disabled':''}></div>
+      <div><label>끝</label><input type="time" id="f-en" value="${en}" ${allday?'disabled':''}></div></div>
+    <div class="row" style="margin-top:8px"><label class="row" style="margin:0;color:var(--text)"><input type="checkbox" id="f-allday" style="width:auto" ${allday?'checked':''}> 종일 / 마감형</label>
+      <span class="grow"></span><label class="row" style="margin:0;color:var(--text)"><input type="checkbox" id="f-done" style="width:auto" ${b.done?'checked':''}> 완료</label></div>
+    <div class="two"><div><label>마감일 (선택)</label><input type="date" id="f-dl" value="${b.deadline||''}"></div>
+      <div><label>실제 시간 h (길거나 짧았을 때만)</label><input type="number" step="0.25" min="0" id="f-act" value="${b.actual_h??''}" placeholder="${ss.length?'타이머 '+fmtH(ss.reduce((a,x)=>a+sessionMs(x),0)/36e5):'비우면 계획 시간'}"></div></div>
+    <label>메모</label><textarea id="f-notes">${esc(b.notes||'')}</textarea>
+    ${ss.length?`<div class="small muted" style="margin-top:8px">집중 세션 ${ss.length}회 · ${ss.map(x=>`${x.started_at.slice(11,16)} ${fmtClock(sessionMs(x))}${x.rating?' ★'+x.rating:''}`).join(' · ')}</div>`:''}
+    <div class="actions">${isNew?'':`<button class="danger" data-act="del-block" data-id="${b.id}">삭제</button><button data-act="dup-block" data-id="${b.id}">복제</button>`}
+      <span class="grow"></span>${isNew?'':`<button data-act="focus" data-id="${b.id}">▶ 집중</button>`}
+      <button data-act="close">취소</button><button class="primary" data-act="save-block" data-id="${b.id||''}">저장</button></div>`);
+  document.getElementById('f-allday').onchange = e => { document.getElementById('f-st').disabled = document.getElementById('f-en').disabled = e.target.checked; };
+}
+async function saveBlock(id){
+  const g = x => document.getElementById(x);
+  const name = g('f-name').value.trim(); if(!name) return toast('이름을 적어주세요');
+  const day = g('f-day').value, all = g('f-allday').checked;
+  let start = day, end = null;
+  if(!all){ if(!g('f-st').value) return toast('시작 시간을 적거나 종일로 바꾸세요');
+    start = day+'T'+g('f-st').value; end = g('f-en').value ? day+'T'+g('f-en').value : null;
+    if(end && end<=start) end = addDays(day,1)+'T'+g('f-en').value; }
+  const body = {name, type:g('f-type').value, category:g('f-cat').value||null, objective_id:g('f-obj').value||null, start, end,
+    done:g('f-done').checked, deadline:g('f-dl').value||null, actual_h:g('f-act').value===''?null:Number(g('f-act').value), notes:g('f-notes').value};
+  id ? await api('PATCH','/blocks/'+id, body) : await api('POST','/blocks', body);
+  closeModal(); await load();
+}
+
+function objModal(o){
+  const isNew=!o.id; const se=currentSeason();
+  openModal(`<h2>${isNew?'새 목표':'목표 편집'}</h2>
+    <label>목표</label><input id="o-name" value="${esc(o.name||'')}" autofocus placeholder="예: 병리학 A0 이상">
+    <div class="two"><div><label>카테고리</label><select id="o-cat">${opts(CATS,o.category,CAT_KO,'—')}</select></div>
+      <div><label>시즌</label><select id="o-season">${opts(S.seasons.map(s=>s.id),o.season_id||se?.id,Object.fromEntries(S.seasons.map(s=>[s.id,s.name])),'—')}</select></div></div>
+    <div class="three"><div><label>마감일</label><input type="date" id="o-dl" value="${o.deadline||''}"></div>
+      <div><label>목표 시간 h</label><input type="number" min="0" id="o-target" value="${o.target_h??''}"></div>
+      <div><label>상태</label><select id="o-status">${opts(STATUSES,o.status||'Not started',STATUS_KO)}</select></div></div>
+    <label>결과 메모</label><textarea id="o-notes">${esc(o.notes||'')}</textarea>
+    <div class="actions">${isNew?'':`<button class="danger" data-act="del-obj" data-id="${o.id}">삭제</button>`}<span class="grow"></span>
+      <button data-act="close">취소</button><button class="primary" data-act="save-obj" data-id="${o.id||''}">저장</button></div>`);
+}
+async function saveObj(id){
+  const g=x=>document.getElementById(x); const name=g('o-name').value.trim(); if(!name) return toast('목표를 적어주세요');
+  const body={name, category:g('o-cat').value||null, season_id:g('o-season').value||null, deadline:g('o-dl').value||null,
+    target_h:g('o-target').value===''?null:Number(g('o-target').value), status:g('o-status').value, notes:g('o-notes').value};
+  id ? await api('PATCH','/objectives/'+id, body) : await api('POST','/objectives', {...body, sort:S.objectives.length});
+  closeModal(); await load();
+}
+function seasonModal(s){
+  const isNew=!s.id;
+  openModal(`<h2>${isNew?'새 시즌':'시즌 편집'}</h2>
+    <label>이름</label><input id="s-name" value="${esc(s.name||'')}" autofocus placeholder="예: 2027 1학기">
+    <div class="two"><div><label>시작</label><input type="date" id="s-start" value="${s.start||today()}"></div>
+      <div><label>끝</label><input type="date" id="s-end" value="${s.end||addDays(today(),90)}"></div></div>
+    <label>이번 시즌의 테마 한 줄</label><input id="s-theme" value="${esc(s.theme||'')}">
+    <div class="actions">${isNew?'':`<button class="danger" data-act="del-season" data-id="${s.id}">삭제</button>`}<span class="grow"></span>
+      <button data-act="close">취소</button><button class="primary" data-act="save-season" data-id="${s.id||''}">저장</button></div>`);
+}
+async function saveSeason(id){
+  const g=x=>document.getElementById(x); const body={name:g('s-name').value.trim()||'새 시즌', start:g('s-start').value, end:g('s-end').value, theme:g('s-theme').value};
+  const r = id ? await api('PATCH','/seasons/'+id, body) : await api('POST','/seasons', body);
+  UI.seasonId = r.id; closeModal(); await load();
+}
+
+// ───────────────────────── 집중 모드 ─────────────────────────
+let tick=null, noise=null, endNotified=false;
+async function startFocus(blockId){
+  closeModal();
+  if(activeSession()) { openFocus(); return; }
+  await api('POST','/focus/start',{block_id:blockId||null}); endNotified=false;
+  if('Notification' in window && Notification.permission==='default') Notification.requestPermission();
+  await load(); openFocus();
+}
+function openFocus(){ document.getElementById('focus').classList.add('on'); drawFocus(); clearInterval(tick); tick=setInterval(drawFocus,1000); }
+function closeFocus(){ document.getElementById('focus').classList.remove('on'); clearInterval(tick); tick=null; }
+function drawFocus(ending){
+  const x = activeSession(); const el=document.getElementById('focus');
+  if(!x){ closeFocus(); return; }
+  const b = S.blocks.find(v=>v.id===x.block_id); const obj = b && S.objectives.find(o=>o.id===b.objective_id);
+  const ms = sessionMs(x);
+  const targetMs = b && hasTime(b.end) ? (parse(b.end)-Math.max(parse(b.start), parse(x.started_at))) : 0;
+  const pct = targetMs ? Math.min(1, ms/targetMs) : 0;
+  if(targetMs && ms>=targetMs && !endNotified){ endNotified=true; try{ new Notification('블록 시간이 끝났어요', {body:b.name}); }catch(e){} beep(); }
+  if(el.dataset.mode==='end' && !ending) { el.querySelector('.clock').textContent=fmtClock(ms); return; }
+  const C=2*Math.PI*150;
+  // 매초 innerHTML을 갈아끼우면 누르던 버튼이 사라져 클릭이 씹힌다 → 구조가 그대로면 숫자만 바꾼다
+  const key = [x.id, !!x.paused_at, !!noise, ending?'end':'run', ms>=targetMs].join('|');
+  if(el.dataset.key===key && !ending){
+    el.querySelector('.clock').textContent = fmtClock(ms);
+    const rem = el.querySelector('.rem'); if(rem) rem.textContent = ms<targetMs?'남은 시간 '+fmtClock(targetMs-ms):'+'+fmtClock(ms-targetMs)+' 초과';
+    const arc = el.querySelector('.arc'); if(arc) arc.setAttribute('stroke-dashoffset', C*(1-pct));
+    return;
+  }
+  el.dataset.key = key;
+  el.dataset.mode = ending?'end':'run';
+  el.innerHTML = ending ? `
+    <div class="fname">${esc(b?.name||'자유 집중')}</div><div class="clock" style="font-size:56px">${fmtClock(ms)}</div>
+    <div class="muted">이번 세션 집중도는?</div>
+    <div class="stars" id="stars">${[1,2,3,4,5].map(n=>`<button data-act="star" data-n="${n}">★</button>`).join('')}</div>
+    <textarea id="end-note" placeholder="한 줄 메모 (선택)" style="width:min(420px,80vw)"></textarea>
+    ${b?`<label class="row" style="color:var(--text)"><input type="checkbox" id="end-complete" style="width:auto" checked> 블록 완료로 표시</label>`:''}
+    <div class="ctrl"><button data-act="end-cancel">돌아가기</button><button class="primary" data-act="end-save">저장하고 끝내기</button></div>`
+  : `<div class="small muted">${obj?esc(obj.name):b?(CAT_KO[b.category]||''):'블록 없이 집중'}</div>
+    <div class="fname">${esc(b?.name||'자유 집중')}</div>
+    <div class="ring">${targetMs?`<svg viewBox="0 0 320 320"><circle cx="160" cy="160" r="150" fill="none" stroke="#2a3350" stroke-width="8"/>
+      <circle class="arc" cx="160" cy="160" r="150" fill="none" stroke="var(--accent2)" stroke-width="8" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C*(1-pct)}"/></svg>`:''}
+      <div><div class="clock">${fmtClock(ms)}</div>${targetMs?`<div class="muted rem">${ms<targetMs?'남은 시간 '+fmtClock(targetMs-ms):'+'+fmtClock(ms-targetMs)+' 초과'}</div>`:''}</div></div>
+    ${x.paused_at?'<div class="paused">일시정지</div>':''}
+    <div class="ctrl">
+      ${x.paused_at?`<button class="primary" data-act="f-resume">▶ 계속</button>`:`<button data-act="f-pause">⏸ 일시정지</button>`}
+      <button data-act="f-end">■ 끝내기</button>
+      <button data-act="noise">${noise?'🔊 노이즈 끄기':'🔈 브라운 노이즈'}</button>
+      <button class="ghost" data-act="f-min">최소화</button></div>
+    <div class="small faint">Esc 최소화 · Space 일시정지</div>`;
+}
+let endRating=null;
+async function focusAction(a){
+  if(a==='f-pause'||a==='f-resume'){ await api('POST','/focus/'+(a==='f-pause'?'pause':'resume')); await load(); drawFocus(); }
+  if(a==='f-end'){ endRating=null; drawFocus(true); }
+  if(a==='end-cancel'){ const f=document.getElementById('focus'); f.dataset.mode='run'; f.dataset.key=''; drawFocus(); }
+  if(a==='end-save'){
+    await api('POST','/focus/end',{rating:endRating, note:document.getElementById('end-note').value, complete:document.getElementById('end-complete')?.checked});
+    stopNoise(); Object.assign(document.getElementById('focus').dataset,{mode:'',key:''}); closeFocus(); await load(); toast('세션 저장됨');
+  }
+  if(a==='f-min') closeFocus();
+  if(a==='noise'){ noise?stopNoise():startNoise(); drawFocus(); }
+}
+function renderFocusBar(){
+  const x=activeSession(); const bar=document.getElementById('focusbar'); bar.classList.toggle('on',!!x);
+  if(!x) return; const b=S.blocks.find(v=>v.id===x.block_id);
+  document.getElementById('fbName').textContent = (b?.name||'자유 집중') + (x.paused_at?' (일시정지)':'');
+  document.getElementById('fbTime').textContent = fmtClock(sessionMs(x));
+}
+setInterval(()=>{ if(activeSession()) renderFocusBar(); }, 1000);
+// 브라운 노이즈 (Superfocus의 집중 음악 대신 — 외부 파일 없이 WebAudio로 생성)
+function startNoise(){ const ctx=new (window.AudioContext||window.webkitAudioContext)(); const len=2*ctx.sampleRate;
+  const buf=ctx.createBuffer(1,len,ctx.sampleRate), d=buf.getChannelData(0); let last=0;
+  for(let i=0;i<len;i++){ const w=Math.random()*2-1; last=(last+0.02*w)/1.02; d[i]=last*3.5; }
+  const src=ctx.createBufferSource(); src.buffer=buf; src.loop=true; const g=ctx.createGain(); g.gain.value=.35; src.connect(g).connect(ctx.destination); src.start(); noise=ctx; }
+function stopNoise(){ if(noise){ noise.close(); noise=null; } }
+function beep(){ try{ const c=new AudioContext(), o=c.createOscillator(), g=c.createGain(); o.frequency.value=880; g.gain.value=.08; o.connect(g).connect(c.destination); o.start(); setTimeout(()=>{o.stop();c.close()},600);}catch(e){} }
+
+// ───────────────────────── 이벤트 ─────────────────────────
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),2200); }
+document.getElementById('nav').onclick = e => { const v=e.target.dataset.v; if(v){ UI.view=v; try{localStorage.setItem('dw.view',v)}catch(_){} render(); } };
+document.getElementById('focusbar').onclick = openFocus;
+document.getElementById('modalBg').addEventListener('mousedown', e => { if(e.target.id==='modalBg') closeModal(); });
+
+document.addEventListener('click', async e => {
+  const slot = e.target.closest('.slot');
+  if(slot){ const h=+slot.dataset.h; return blockModal({start:slot.dataset.day+'T'+pad(h)+':00', end:slot.dataset.day+'T'+pad(Math.min(23,h+1))+':'+(h+1>23?'59':'00'), type:'Focus block'}); }
+  const blk = e.target.closest('.blk, .allday .item');
+  if(blk){ return blockModal(S.blocks.find(b=>b.id===blk.dataset.id)); }
+  const el = e.target.closest('[data-act]'); if(!el) return;
+  const a = el.dataset.act, id = el.dataset.id;
+  if(el.tagName==='SELECT'||el.tagName==='INPUT' && el.type!=='checkbox') return;
+  const B = () => S.blocks.find(b=>b.id===id);
+  switch(a){
+    case 'day': UI.day = +el.dataset.n===0 ? today() : addDays(UI.day,+el.dataset.n); render(); break;
+    case 'goto': UI.view=el.dataset.v; render(); break;
+    case 'new-block': blockModal({start:el.dataset.day+'T'+pad(Math.max(DAY_START,Math.min(22,new Date().getHours()+1)))+':00', type:'Focus block'}); break;
+    case 'edit': blockModal(B()); break;
+    case 'save-block': saveBlock(id); break;
+    case 'del-block': if(confirm('이 블록을 삭제할까요? 집중 기록도 함께 지워집니다.')){ await api('DELETE','/blocks/'+id); closeModal(); load(); } break;
+    case 'dup-block': { const b=B(); const {id:_,created,...rest}=b; const r=await api('POST','/blocks',{...rest, done:false, actual_h:null}); await load(); blockModal(S.blocks.find(x=>x.id===r.id)); break; }
+    case 'close': closeModal(); break;
+    case 'focus': startFocus(id); break;
+    case 'open-focus': openFocus(); break;
+    case 'to-today': case 'to-tomorrow': { const b=B(); const d=a==='to-today'?today():addDays(today(),1);
+      const shift = s => s ? d + s.slice(10) : s;
+      await api('PATCH','/blocks/'+id,{start:shift(b.start), end:b.end?(b.end.slice(0,10)>b.start.slice(0,10)?addDays(d,1)+b.end.slice(10):shift(b.end)):null}); load(); toast(a==='to-today'?'오늘로 옮김':'내일로 옮김'); break; }
+    case 'toggle-done': { const b=B(); await api('PATCH','/blocks/'+id,{done:!b.done}); load(); break; }
+    case 'new-obj': objModal({}); break;
+    case 'edit-obj': objModal(S.objectives.find(o=>o.id===id)); break;
+    case 'save-obj': saveObj(id); break;
+    case 'del-obj': if(confirm('목표를 삭제할까요? 연결된 블록은 남고 연결만 풀립니다.')){ await api('DELETE','/objectives/'+id); closeModal(); load(); } break;
+    case 'new-season': seasonModal({}); break;
+    case 'edit-season': seasonModal(S.seasons.find(s=>s.id===id)); break;
+    case 'save-season': saveSeason(id); break;
+    case 'del-season': if(confirm('시즌을 삭제할까요? 목표는 남습니다.')){ await api('DELETE','/seasons/'+id); UI.seasonId=null; closeModal(); load(); } break;
+    case 'rkind': UI.reviewKind=el.dataset.k; render(); break;
+    case 'rday': UI.reviewDay=addDays(UI.reviewDay,+el.dataset.n); render(); break;
+    case 'energy': document.querySelectorAll('.energy button').forEach(x=>x.classList.toggle('on',x===el)); break;
+    case 'save-review': { const en=document.querySelector('.energy button.on');
+      await api('POST','/reviews',{kind:el.dataset.kind, period:el.dataset.period, energy:en?+en.dataset.n:null,
+        wins:document.getElementById('rv-wins').value, lessons:document.getElementById('rv-lessons').value, next:document.getElementById('rv-next').value});
+      await load(); toast('리뷰 저장됨'); break; }
+    case 'menu': menuModal(); break;
+    case 'login': case 'signup': authAction(a); break;
+    case 'export': exportFile(); break;
+    case 'sync': closeModal(); await load(); toast('동기화됨'); break;
+    case 'logout': await sb.auth.signOut(); closeModal(); sbUser=null; S={seasons:[],objectives:[],blocks:[],sessions:[],reviews:[],settings:{}}; boot(); break;
+    case 'star': endRating=+el.dataset.n; document.querySelectorAll('#stars button').forEach(x=>x.classList.toggle('on',+x.dataset.n<=endRating)); break;
+    default: if(a.startsWith('f-')||a.startsWith('end-')||a==='noise') focusAction(a);
+  }
+});
+document.addEventListener('change', async e => {
+  const el=e.target; const a=el.dataset?.act;
+  if(a==='obj-status'){ await api('PATCH','/objectives/'+el.dataset.id,{status:el.value}); load(); }
+  if(a==='pick-season'){ UI.seasonId=el.value; render(); }
+  if(a==='weekly-goal'){ await api('POST','/settings',{weekly_goal_h:Math.max(1,+el.value||20)}); load(); }
+});
+document.addEventListener('keydown', e => {
+  if(!sbUser) return;
+  const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName);
+  const focusOn = document.getElementById('focus').classList.contains('on');
+  if(e.key==='Escape'){ if(focusOn && document.getElementById('focus').dataset.mode!=='end') closeFocus(); else closeModal(); return; }
+  if(typing) { if(e.key==='Enter' && (e.metaKey||e.ctrlKey)) document.querySelector('#modal [data-act^="save"]')?.click(); return; }
+  if(focusOn){ if(e.code==='Space'){ e.preventDefault(); focusAction(activeSession()?.paused_at?'f-resume':'f-pause'); } return; }
+  if(document.getElementById('modalBg').classList.contains('on')) return;
+  const k=e.key.toLowerCase();
+  if(k==='n') blockModal({start:UI.day+'T'+pad(Math.max(DAY_START,Math.min(22,new Date().getHours()+1)))+':00', type:'Focus block'});
+  if(k==='t'){ UI.day=today(); render(); }
+  if(e.key==='ArrowLeft'&&(UI.view==='today'||UI.view==='week')){ UI.day=addDays(UI.day,UI.view==='week'?-7:-1); render(); }
+  if(e.key==='ArrowRight'&&(UI.view==='today'||UI.view==='week')){ UI.day=addDays(UI.day,UI.view==='week'?7:1); render(); }
+  if(k==='f') document.querySelector('[data-act="focus"],[data-act="open-focus"]')?.click();
+  const map={'1':'today','2':'week','3':'goals','4':'score','5':'review'}; if(map[e.key]){ UI.view=map[e.key]; render(); }
+});
+// 1분마다 다시 그려 현재 시각 선·다음 블록 갱신 (입력 중이면 건너뜀)
+setInterval(()=>{ if(!document.getElementById('modalBg').classList.contains('on') && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) && UI.view!=='review') render(); }, 60000);
+document.getElementById('a-pw').addEventListener('keydown', e => { if(e.key==='Enter') authAction('login'); });
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+boot();
+</script>
+</body>
+</html>
