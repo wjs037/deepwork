@@ -154,6 +154,18 @@ th{color:var(--dim);font-weight:500;font-size:12px;border-top:none}
 .toast.on{opacity:1}
 @media (max-width:1000px){.today,.review,.charts{grid-template-columns:1fr}.score{grid-template-columns:repeat(2,1fr)}}
 
+/* 계획 / 실제 레인 */
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid-head div.lane-act{color:var(--good)}
+.daycol.act-col{background:rgba(76,175,122,.035)}
+.daycol.day-start{border-left:2px solid var(--line2)}
+.blk.act{color:#fff}
+.blk.act.chk{background:transparent;border:1.5px dashed;border-left-width:3px;opacity:.8}
+.blk.act.live{outline:2px solid var(--now);outline-offset:1px;animation:pulse 2s infinite}
+.grid.dual .blk{font-size:11.5px}
+#focus .endbox{width:min(440px,88vw);text-align:left}
+#focus .endbox label{color:#aab}
+
 /* 로그인 */
 #auth{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:var(--bg);z-index:90;padding:20px}
 #auth.on{display:flex}
@@ -178,6 +190,7 @@ th{color:var(--dim);font-weight:500;font-size:12px;border-top:none}
   .datebar{flex-wrap:wrap}
   .datebar .title{font-size:17px;width:100%}
   .wide .grid{min-width:720px}
+  .wide.dual .grid{min-width:1200px}
   .season-card{flex-direction:column;align-items:stretch}
   .modal{padding:16px;border-radius:14px 14px 0 0;align-self:flex-end;width:100%;max-height:88vh;padding-bottom:calc(16px + env(safe-area-inset-bottom))}
   .modal .two,.modal .three{grid-template-columns:1fr}
@@ -222,7 +235,7 @@ th{color:var(--dim);font-weight:500;font-size:12px;border-top:none}
 <script>
 // ───────────────────────── 데이터 ─────────────────────────
 let S = {seasons:[],objectives:[],blocks:[],sessions:[],reviews:[],settings:{}};
-const UI = {view: localStorage.getItem('dw.view') || 'today', day: today(), seasonId: null, reviewKind:'daily', reviewDay: today()};
+const UI = {view: localStorage.getItem('dw.view') || 'today', day: today(), seasonId: null, reviewKind:'daily', reviewDay: today(), weekDual: (()=>{try{const v=localStorage.getItem('dw.weekDual'); if(v!==null) return v==='1'}catch(_){} return innerWidth>700})()};
 const CATS = ['Medical study','Research','Self-improvement','Health','App / product dev','Writing','Admin'];
 const CAT_KO = {'Medical study':'의학 공부','Research':'연구','Self-improvement':'자기계발','Health':'건강',
   'App / product dev':'앱 개발','Writing':'글쓰기','Admin':'행정'};
@@ -244,7 +257,7 @@ const COLS = {
   seasons:['name','start','end','theme'],
   objectives:['season_id','name','category','deadline','target_h','status','notes','sort'],
   blocks:['name','start','end','type','category','objective_id','notes','done','actual_h','deadline'],
-  focus_sessions:['block_id','started_at','ended_at','paused_at','paused_ms','rating','note'],
+  focus_sessions:['block_id','started_at','ended_at','paused_at','paused_ms','rating','note','name','category','objective_id'],
   reviews:['kind','period','energy','wins','lessons','next','updated'],
 };
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+Math.random()).replace(/-/g,'');
@@ -275,7 +288,11 @@ async function focusOp(action, body){
   if(action==='resume' && cur.paused_at) patch = {paused_at:null, paused_ms:(cur.paused_ms||0)+since(cur.paused_at)};
   if(action==='end'){
     patch = {ended_at:t, paused_at:null, paused_ms:(cur.paused_ms||0)+(cur.paused_at?since(cur.paused_at):0), rating:body.rating??null, note:body.note||''};
-    if(cur.block_id && body.complete) await q(sb.from('blocks').update({done:true}).eq('id', cur.block_id));
+    // 끝낼 때 고른 계획 블록에 붙인다. 안 고르면 이름·카테고리·목표를 단 '즉석' 실제 기록으로 남는다
+    const link = body.block_id !== undefined ? (body.block_id || null) : cur.block_id;
+    Object.assign(patch, link ? {block_id:link, name:null, category:null, objective_id:null}
+      : {block_id:null, name:body.name||'자유 집중', category:body.category||null, objective_id:body.objective_id||null});
+    if(link && body.complete) await q(sb.from('blocks').update({done:true}).eq('id', link));
   }
   if(patch) await q(sb.from('focus_sessions').update(patch).eq('id', cur.id));
   return {ok:true};
@@ -395,6 +412,11 @@ function sessionMs(x, now=Date.now()){
   return Math.max(0, end - parse(x.started_at).getTime() - (x.paused_ms||0) - pausedNow);
 }
 function sessionsOf(b){return S.sessions.filter(x=>x.block_id===b.id)}
+// 세션이 블록에 연결돼 있으면 이름·카테고리·목표는 블록 것을, 아니면 세션에 직접 적은 것을 쓴다
+const sessBlock = x => x.block_id ? S.blocks.find(b=>b.id===x.block_id) : null;
+const sessName = x => sessBlock(x)?.name || x.name || '자유 집중';
+const sessCat = x => sessBlock(x) ? sessBlock(x).category : x.category;
+const sessObj = x => sessBlock(x) ? sessBlock(x).objective_id : x.objective_id;
 function loggedH(b){
   if(b.actual_h!=null && b.actual_h!=='') return Number(b.actual_h);
   const ss = sessionsOf(b).filter(x=>x.ended_at);
@@ -402,14 +424,25 @@ function loggedH(b){
   return b.done ? plannedH(b) : 0;
 }
 const isDeep = b => b.type==='Focus block';
-// 특정 날짜의 딥워크 시간 (블록 + 블록 없는 자유 세션)
+// 날짜별 실제 딥워크 시간 (딥워크 블록 + 블록 없이 한 자유 집중)
 function deepHoursByDay(){
   const m = {};
   for(const b of S.blocks) if(isDeep(b)){ const h=loggedH(b); if(h) m[blockDay(b)]=(m[blockDay(b)]||0)+h; }
   for(const x of S.sessions) if(!x.block_id && x.ended_at){ const d=x.started_at.slice(0,10); m[d]=(m[d]||0)+sessionMs(x)/36e5; }
   return m;
 }
-function objHours(o){ return S.blocks.filter(b=>b.objective_id===o.id).reduce((a,b)=>a+loggedH(b),0); }
+// 날짜별 계획 딥워크 시간 (딥워크 블록의 시작~끝)
+function plannedHoursByDay(){
+  const m = {};
+  for(const b of S.blocks) if(isDeep(b)){ const h=plannedH(b); if(h) m[blockDay(b)]=(m[blockDay(b)]||0)+h; }
+  return m;
+}
+function objHours(o){
+  return S.blocks.filter(b=>b.objective_id===o.id).reduce((a,b)=>a+loggedH(b),0)
+    + S.sessions.filter(x=>!x.block_id && x.ended_at && x.objective_id===o.id).reduce((a,x)=>a+sessionMs(x)/36e5,0);
+}
+const pct = (a,b) => b ? Math.round(a/b*100) : null;
+function fmtDur(ms){ const m=Math.round(ms/6e4); return m>=60 ? `${Math.floor(m/60)}h${m%60?' '+m%60+'m':''}` : `${m}m`; }
 function activeSession(){ return S.sessions.find(x=>!x.ended_at) || null; }
 function currentSeason(){
   if(UI.seasonId) return S.seasons.find(s=>s.id===UI.seasonId);
@@ -439,12 +472,14 @@ function render(){
   if(UI.view==='today'||UI.view==='week'){ const g=document.querySelector('.grid-scroll'); if(g && !g.dataset.s){ g.dataset.s=1; } }
 }
 
-// 하루치 시간축 블록 배치 (겹치면 칸 나눔)
-function layoutDay(list){
-  const items = list.filter(b=>hasTime(b.start)).map(b=>{
-    const s=parse(b.start), e=hasTime(b.end)?parse(b.end):new Date(s.getTime()+30*6e4);
-    return {b, s:s.getHours()+s.getMinutes()/60, e:Math.max(e.getHours()+e.getMinutes()/60 + (ymd(e)>ymd(s)?24:0), s.getHours()+s.getMinutes()/60+0.4)};
-  }).sort((a,c)=>a.s-c.s||c.e-a.e);
+// 시작~끝 문자열 → 시간축 위치(시 단위). 너무 짧으면 최소 높이를 준다
+function toSpan(startStr, endStr, minH=0.4){
+  const s=parse(startStr), e=endStr?parse(endStr):new Date(s.getTime()+30*6e4), sh=s.getHours()+s.getMinutes()/60;
+  return {s:sh, e:Math.max(e.getHours()+e.getMinutes()/60 + (ymd(e)>ymd(s)?24:0), sh+minH)};
+}
+// 겹치는 것끼리 칸을 나눠 배치
+function place(items){
+  items.sort((a,c)=>a.s-c.s||c.e-a.e);
   let cluster=[], end=-1; const out=[];
   const flush=()=>{ const cols=[]; for(const it of cluster){ let i=cols.findIndex(c=>c<=it.s); if(i<0){i=cols.length;cols.push(0)} cols[i]=it.e; it.col=i; }
     cluster.forEach(it=>it.ncol=cols.length); out.push(...cluster); cluster=[]; };
@@ -452,29 +487,61 @@ function layoutDay(list){
   if(cluster.length) flush();
   return out;
 }
+function layoutDay(list){ return place(list.filter(b=>hasTime(b.start)).map(b=>({b, ...toSpan(b.start, hasTime(b.end)?b.end:null)}))); }
+// 실제 레인: 집중 세션은 실제 시각에, 타이머 없이 '완료' 체크만 한 블록은 계획 시각에 점선으로
+function actualItems(d){
+  const items=[];
+  for(const x of S.sessions) if(x.started_at.slice(0,10)===d) items.push({x, ...toSpan(x.started_at, x.ended_at||nowIso(), 0.3)});
+  for(const b of S.blocks) if(blockDay(b)===d && b.done && hasTime(b.start) && b.type!=='Personal' && !sessionsOf(b).length)
+    items.push({b, chk:true, ...toSpan(b.start, hasTime(b.end)?b.end:null)});
+  return place(items);
+}
 
-function gridHTML(days){
+function gridHTML(days, dual){
   const hourPx = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--hour'));
   const live = activeSession();
   const t = today(); const nowD = new Date();
-  let head = `<div class="grid-head"><div></div>${days.map(d=>`<div class="${d===t?'is-today':''}">${days.length>1?`${DOW[parse(d).getDay()]} ${parse(d).getDate()}`:fmtDay(d)}</div>`).join('')}</div>`;
-  let hours = `<div class="hours">${Array.from({length:DAY_END-DAY_START},(_,i)=>`<div class="h">${i?pad(DAY_START+i)+':00':''}</div>`).join('')}</div>`;
-  let cols = days.map(d=>{
-    const items = layoutDay(S.blocks.filter(b=>blockDay(b)===d));
-    const slots = Array.from({length:DAY_END-DAY_START},(_,i)=>`<div class="slot" data-day="${d}" data-h="${DAY_START+i}"></div>`).join('');
-    const blks = items.map(it=>{
-      const top=(Math.max(it.s,DAY_START)-DAY_START)*hourPx, h=Math.max(18,(Math.min(it.e,DAY_END)-Math.max(it.s,DAY_START))*hourPx-2);
-      const c=CAT_COLOR[it.b.category]||'#777'; const w=100/it.ncol;
-      const obj=S.objectives.find(o=>o.id===it.b.objective_id);
-      return `<div class="blk ${it.b.done?'done':''} ${live&&live.block_id===it.b.id?'live':''}" data-id="${it.b.id}"
-        style="top:${top}px;height:${h}px;left:calc(${w*it.col}% + 3px);width:calc(${w}% - 6px);background:${c}22;border-color:${c}">
-        <div class="t">${esc(it.b.name)}</div>
-        <div class="m">${hm(parse(it.b.start))}${hasTime(it.b.end)?'–'+hm(parse(it.b.end)):''}${it.b.type!=='Focus block'?' · '+TYPE_KO[it.b.type]:''}${obj&&h>44?' · '+esc(obj.name):''}</div></div>`;
-    }).join('');
-    const nl = d===t ? `<div class="nowline" style="top:${(nowD.getHours()+nowD.getMinutes()/60-DAY_START)*hourPx}px"></div>` : '';
-    return `<div class="daycol">${slots}${blks}${nl}</div>`;
+  const P = plannedHoursByDay(), A = deepHoursByDay();
+  const lanes = days.flatMap(d => dual ? [{d, lane:'plan'}, {d, lane:'act'}] : [{d, lane:'plan'}]);
+  const dayTxt = d => days.length>1 ? `${DOW[parse(d).getDay()]} ${parse(d).getDate()}` : fmtDay(d);
+  const label = L => {
+    if(!dual) return dayTxt(L.d);
+    if(L.lane==='plan') return `${days.length>1?dayTxt(L.d)+' · ':''}계획 ${fmtH(P[L.d]||0)}`;
+    const p = pct(A[L.d]||0, P[L.d]||0);
+    return `실제 ${fmtH(A[L.d]||0)}${p!=null?` · <b>${p}%</b>`:''}`;
+  };
+  const head = `<div class="grid-head"><div></div>${lanes.map(L=>`<div class="${L.d===t?'is-today':''} ${L.lane==='act'?'lane-act':''}">${label(L)}</div>`).join('')}</div>`;
+  const hours = `<div class="hours">${Array.from({length:DAY_END-DAY_START},(_,i)=>`<div class="h">${i?pad(DAY_START+i)+':00':''}</div>`).join('')}</div>`;
+  const box = (it, h) => { const top=(Math.max(it.s,DAY_START)-DAY_START)*hourPx; const w=100/it.ncol;
+    return `top:${top}px;height:${h}px;left:calc(${w*it.col}% + 3px);width:calc(${w}% - 6px);`; };
+  const height = it => Math.max(18,(Math.min(it.e,DAY_END)-Math.max(it.s,DAY_START))*hourPx-2);
+  const cols = lanes.map((L,i) => {
+    const slots = Array.from({length:DAY_END-DAY_START},(_,k)=>`<div class="slot" data-lane="${L.lane}" data-day="${L.d}" data-h="${DAY_START+k}"></div>`).join('');
+    let blks;
+    if(L.lane==='plan'){
+      blks = layoutDay(S.blocks.filter(b=>blockDay(b)===L.d)).map(it=>{
+        const h=height(it), c=CAT_COLOR[it.b.category]||'#777', obj=S.objectives.find(o=>o.id===it.b.objective_id);
+        return `<div class="blk ${it.b.done?'done':''} ${live&&live.block_id===it.b.id?'live':''}" data-id="${it.b.id}" style="${box(it,h)}background:${c}22;border-color:${c}">
+          <div class="t">${esc(it.b.name)}</div>
+          <div class="m">${hm(parse(it.b.start))}${hasTime(it.b.end)?'–'+hm(parse(it.b.end)):''}${it.b.type!=='Focus block'?' · '+TYPE_KO[it.b.type]:''}${obj&&h>44?' · '+esc(obj.name):''}</div></div>`;
+      }).join('');
+    } else {
+      blks = actualItems(L.d).map(it=>{
+        const h=height(it);
+        if(it.chk){ const c=CAT_COLOR[it.b.category]||'#777';
+          return `<div class="blk act chk" data-id="${it.b.id}" style="${box(it,h)}border-color:${c};color:${c}">
+            <div class="t">✓ ${esc(it.b.name)}</div><div class="m">체크로 완료 · ${fmtH(loggedH(it.b))}</div></div>`; }
+        const x=it.x, c=CAT_COLOR[sessCat(x)]||'#8a8a8a';
+        return `<div class="blk act ${x.ended_at?'':'live'}" data-sid="${x.id}" style="${box(it,h)}background:${c}55;border-color:${c}">
+          <div class="t">${esc(sessName(x))}</div>
+          <div class="m">${hm(parse(x.started_at))}–${x.ended_at?hm(parse(x.ended_at)):'진행 중'} · ${fmtDur(sessionMs(x))}${x.rating?' · '+'★'.repeat(x.rating):''}${!x.block_id?' · 즉석':''}</div></div>`;
+      }).join('');
+    }
+    const nl = L.d===t ? `<div class="nowline" style="top:${(nowD.getHours()+nowD.getMinutes()/60-DAY_START)*hourPx}px"></div>` : '';
+    const cls = `daycol ${L.lane==='act'?'act-col':''} ${dual&&L.lane==='plan'&&i>0?'day-start':''}`;
+    return `<div class="${cls}">${slots}${blks}${nl}</div>`;
   }).join('');
-  return `<div class="grid" style="grid-template-columns:48px repeat(${days.length},1fr)">${head}${hours}${cols}</div>`;
+  return `<div class="grid ${dual?'dual':''}" style="grid-template-columns:48px repeat(${lanes.length},1fr)">${head}${hours}${cols}</div>`;
 }
 
 function alldayHTML(d){
@@ -510,11 +577,12 @@ function viewToday(){
       <button class="primary" data-act="new-block" data-day="${d}">+ 블록</button>
     </div>
     ${alldayHTML(d)}
-    ${gridHTML([d])}
+    ${gridHTML([d], true)}
+    <div class="small faint" style="margin-top:6px">왼쪽 계획을 누르면 블록, 오른쪽 실제 빈칸을 누르면 타이머 없이 한 일을 기록해요.</div>
    </div>
    <div class="side">
     <div class="card next">
-      ${live ? `<div class="small muted">집중 중</div><div class="name">${esc(S.blocks.find(b=>b.id===live.block_id)?.name||'자유 집중')}</div>
+      ${live ? `<div class="small muted">집중 중</div><div class="name">${esc(sessName(live))}</div>
         <button class="primary" data-act="open-focus">집중 화면 열기</button>`
       : nxt ? `<div class="small muted">${cur?'지금 블록':'다음 블록'} · ${hm(parse(nxt.start))}${hasTime(nxt.end)?'–'+hm(parse(nxt.end)):''}</div>
         <div class="name">${esc(nxt.name)}</div>
@@ -524,13 +592,13 @@ function viewToday(){
         <button data-act="focus" data-id="">▶ 블록 없이 집중</button>`}
     </div>
     <div class="card">
-      <h2>${d===t?'오늘':'이날'} 딥워크</h2>
+      <h2>${d===t?'오늘':'이날'} 딥워크 달성</h2>
       <div class="kpis">
-        <div class="kpi"><div class="v">${fmtH(logged)}</div><div class="l">기록</div></div>
-        <div class="kpi"><div class="v">${fmtH(planned)}</div><div class="l">계획</div></div>
+        <div class="kpi"><div class="v">${pct(logged,planned)??'—'}${planned?'%':''}</div><div class="l">계획 대비</div></div>
+        <div class="kpi"><div class="v">${fmtH(logged)} <span class="muted" style="font-size:14px">/ ${fmtH(planned)}</span></div><div class="l">실제 / 계획</div></div>
       </div>
-      <div class="bar" style="margin-top:10px"><i style="width:${planned?Math.min(100,logged/planned*100):0}%"></i></div>
-      <div class="small muted" style="margin-top:6px">${deep.filter(b=>b.done).length}/${deep.length} 블록 완료</div>
+      <div class="bar" style="margin-top:10px"><i style="width:${planned?Math.min(100,logged/planned*100):0}%;${logged>=planned&&planned?'background:var(--good)':''}"></i></div>
+      <div class="small muted" style="margin-top:6px">${deep.filter(b=>b.done).length}/${deep.length} 블록 완료${(()=>{const f=S.sessions.filter(x=>!x.block_id&&x.ended_at&&x.started_at.slice(0,10)===d);return f.length?` · 즉석 집중 ${f.length}회 ${fmtDur(f.reduce((a,x)=>a+sessionMs(x),0))}`:''})()}</div>
     </div>
     <div class="card">
       <h2>다가오는 마감·시험</h2>
@@ -548,17 +616,20 @@ function viewToday(){
 
 function viewWeek(){
   const ws = weekStart(UI.day); const days = Array.from({length:7},(_,i)=>addDays(ws,i));
-  const m = deepHoursByDay(); const tot = days.reduce((a,d)=>a+(m[d]||0),0);
+  const m = deepHoursByDay(), P = plannedHoursByDay();
+  const tot = days.reduce((a,d)=>a+(m[d]||0),0), ptot = days.reduce((a,d)=>a+(P[d]||0),0);
+  const dual = UI.weekDual, span = dual ? 'grid-column:span 2;' : '';
   return `<div class="datebar">
       <span class="title">${fmtDay(ws).replace(/ \(.\)/,'')} 주</span>
       <button class="ghost" data-act="day" data-n="-7">◀</button>
       <button data-act="day" data-n="0">이번 주</button>
       <button class="ghost" data-act="day" data-n="7">▶</button>
-      <span class="chip">딥워크 ${fmtH(tot)}</span>
-      <span class="grow"></span><button class="primary" data-act="new-block" data-day="${UI.day}">+ 블록</button></div>
-    <div class="wide"><div class="grid" style="grid-template-columns:48px repeat(7,1fr);margin-bottom:8px;border-bottom:none;border-radius:var(--r) var(--r) 0 0">
-      <div></div>${days.map(d=>`<div style="padding:6px;border-left:1px solid var(--line)">${alldayHTML(d).replace('class="allday"','class="allday" style="margin:0"')}</div>`).join('')}</div>
-    ${gridHTML(days)}</div>`;
+      <span class="chip">실제 ${fmtH(tot)} / 계획 ${fmtH(ptot)}${ptot?' · '+pct(tot,ptot)+'%':''}</span>
+      <span class="grow"></span><button data-act="week-dual">${dual?'계획만 보기':'계획 + 실제'}</button>
+      <button class="primary" data-act="new-block" data-day="${UI.day}">+ 블록</button></div>
+    <div class="wide ${dual?'dual':''}"><div class="grid" style="grid-template-columns:48px repeat(${dual?14:7},1fr);margin-bottom:8px;border-bottom:none;border-radius:var(--r) var(--r) 0 0">
+      <div></div>${days.map(d=>`<div style="${span}padding:6px;border-left:1px solid var(--line)">${alldayHTML(d).replace('class="allday"','class="allday" style="margin:0"')}</div>`).join('')}</div>
+    ${gridHTML(days, dual)}</div>`;
 }
 
 function viewGoals(){
@@ -612,16 +683,21 @@ function viewScore(){
   const seasonH = se?sumRange(se.start,se.end):Object.values(m).reduce((a,b)=>a+b,0);
   // 주간 막대 12주
   const weeks = Array.from({length:12},(_,i)=>addDays(ws,-7*(11-i)));
-  const wv = weeks.map(w=>sumRange(w,addDays(w,6))); const wmax=Math.max(5,...wv);
+  const wv = weeks.map(w=>sumRange(w,addDays(w,6)));
+  const P = plannedHoursByDay(); const pRange=(a,b)=>Object.entries(P).filter(([d])=>d>=a&&d<=b).reduce((x,[,h])=>x+h,0);
+  const pv = weeks.map(w=>pRange(w,addDays(w,6))); const wmax=Math.max(5,...wv,...pv);
+  const thisWeekP = pv[11];
   const W=560,H=200,pl=28,pb=22,bw=(W-pl)/12;
   const goalW = S.settings.weekly_goal_h || 20;
-  const bars = wv.map((v,i)=>{const h=(H-pb-10)*v/wmax; return `<rect x="${pl+i*bw+5}" y="${H-pb-h}" width="${bw-10}" height="${h}" rx="4" fill="${i===11?'var(--accent2)':'#4a6fbf'}"/>
+  const bars = wv.map((v,i)=>{const h=(H-pb-10)*v/wmax, ph=(H-pb-10)*pv[i]/wmax; return `<rect x="${pl+i*bw+5}" y="${H-pb-ph}" width="${bw-10}" height="${ph}" rx="4" fill="none" stroke="#5a5a5a" stroke-dasharray="3 3"/>
+    <rect x="${pl+i*bw+5}" y="${H-pb-h}" width="${bw-10}" height="${h}" rx="4" fill="${i===11?'var(--accent2)':'#4a6fbf'}"/>
     <text x="${pl+i*bw+bw/2}" y="${H-6}" text-anchor="middle">${parse(weeks[i]).getMonth()+1}/${parse(weeks[i]).getDate()}</text>
     ${v?`<text x="${pl+i*bw+bw/2}" y="${H-pb-h-4}" text-anchor="middle" style="fill:#ccc">${Math.round(v*10)/10}</text>`:''}`}).join('');
   const gy = H-pb-(H-pb-10)*goalW/wmax;
   const goalLine = goalW<=wmax?`<line x1="${pl}" x2="${W}" y1="${gy}" y2="${gy}" stroke="#e0a03a" stroke-dasharray="4 4"/><text x="${pl}" y="${gy-4}" style="fill:#e0a03a">목표 ${goalW}h</text>`:'';
   // 카테고리
   const byCat={}; for(const b of S.blocks) if(isDeep(b)&&(!se||(blockDay(b)>=se.start&&blockDay(b)<=se.end))){const h=loggedH(b); if(h) byCat[b.category||'기타']=(byCat[b.category||'기타']||0)+h;}
+  for(const x of S.sessions) if(!x.block_id&&x.ended_at){const d=x.started_at.slice(0,10); if(se&&(d<se.start||d>se.end)) continue; const c=x.category||'기타'; byCat[c]=(byCat[c]||0)+sessionMs(x)/36e5;}
   const cmax=Math.max(1,...Object.values(byCat));
   const catHTML = Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c,h])=>`<div class="hbar"><span>${CAT_KO[c]||esc(c)}</span>
     <div class="bar"><i style="width:${h/cmax*100}%;background:${CAT_COLOR[c]||'#888'}"></i></div><span class="muted">${fmtH(h)}</span></div>`).join('')||'<div class="muted">기록 없음</div>';
@@ -631,13 +707,13 @@ function viewScore(){
     const a = h? Math.min(1,.25+h/6):0; return `<div class="c" title="${day} · ${fmtH(h)}" style="${h?`background:rgba(91,141,239,${a})`:''}${day>t?';opacity:.25':''}"></div>`}).join('')}</div>`).join('');
   const objs = S.objectives.filter(o=>!se||o.season_id===se.id);
   return `<div class="score">
-     <div class="card kpi"><div class="v">${fmtH(thisWeek)}</div><div class="l">이번 주 · 지난주 ${fmtH(lastWeek)}</div></div>
+     <div class="card kpi"><div class="v">${fmtH(thisWeek)}</div><div class="l">이번 주 · 계획 ${fmtH(thisWeekP)}${thisWeekP?' 대비 '+pct(thisWeek,thisWeekP)+'%':''} · 지난주 ${fmtH(lastWeek)}</div></div>
      <div class="card kpi"><div class="v">${fmtH(m[t]||0)}</div><div class="l">오늘</div></div>
      <div class="card kpi"><div class="v">${fmtH(seasonH)}</div><div class="l">${se?esc(se.name):'전체'} 누적</div></div>
      <div class="card kpi"><div class="v">🔥 ${streak()}일</div><div class="l">연속 딥워크</div></div>
    </div>
    <div class="charts">
-     <div class="card"><div class="row"><h2 class="grow">주간 딥워크</h2>
+     <div class="card"><div class="row"><h2 class="grow">주간 딥워크 <span class="small muted" style="font-weight:400">■ 실제 ┄ 계획</span></h2>
        <span class="small muted">주간 목표</span><input type="number" min="1" step="1" value="${goalW}" data-act="weekly-goal" style="width:70px;padding:3px 8px"></div>
        <svg viewBox="0 0 ${W} ${H}" width="100%">${goalLine}${bars}</svg></div>
      <div class="card"><h2>카테고리별 (${se?esc(se.name):'전체'})</h2>${catHTML}</div>
@@ -646,8 +722,8 @@ function viewScore(){
      <div class="card"><h2>최근 20주</h2><div class="row" style="align-items:flex-start;gap:6px">
        <div class="small faint" style="display:flex;flex-direction:column;gap:3px;line-height:13px">${['월','','수','','금','','일'].map(x=>`<span>${x||'&nbsp;'}</span>`).join('')}</div>
        <div class="heat">${heat}</div></div></div>
-     <div class="card"><h2>목표별</h2><table><tr><th>목표</th><th>시간</th><th>목표h</th><th>상태</th></tr>
-       ${objs.map(o=>{const h=objHours(o);return `<tr><td>${esc(o.name)}</td><td>${fmtH(h)}</td><td class="muted">${o.target_h?fmtH(o.target_h):'—'}</td><td class="muted small">${STATUS_KO[o.status]||''}</td></tr>`}).join('')}</table></div>
+     <div class="card"><h2>목표별</h2><table><tr><th>목표</th><th>시간</th><th>목표h</th><th>달성</th><th>상태</th></tr>
+       ${objs.map(o=>{const h=objHours(o);return `<tr><td>${esc(o.name)}</td><td>${fmtH(h)}</td><td class="muted">${o.target_h?fmtH(o.target_h):'—'}</td><td>${o.target_h?pct(h,o.target_h)+'%':'—'}</td><td class="muted small" style="white-space:nowrap">${STATUS_KO[o.status]||''}</td></tr>`}).join('')}</table></div>
    </div>`;
 }
 
@@ -817,8 +893,7 @@ function drawFocus(ending){
     <div class="fname">${esc(b?.name||'자유 집중')}</div><div class="clock" style="font-size:56px">${fmtClock(ms)}</div>
     <div class="muted">이번 세션 집중도는?</div>
     <div class="stars" id="stars">${[1,2,3,4,5].map(n=>`<button data-act="star" data-n="${n}">★</button>`).join('')}</div>
-    <textarea id="end-note" placeholder="한 줄 메모 (선택)" style="width:min(420px,80vw)"></textarea>
-    ${b?`<label class="row" style="color:var(--text)"><input type="checkbox" id="end-complete" style="width:auto" checked> 블록 완료로 표시</label>`:''}
+    ${endLinkHTML(x, b)}
     <div class="ctrl"><button data-act="end-cancel">돌아가기</button><button class="primary" data-act="end-save">저장하고 끝내기</button></div>`
   : `<div class="small muted">${obj?esc(obj.name):b?(CAT_KO[b.category]||''):'블록 없이 집중'}</div>
     <div class="fname">${esc(b?.name||'자유 집중')}</div>
@@ -833,13 +908,72 @@ function drawFocus(ending){
       <button class="ghost" data-act="f-min">최소화</button></div>
     <div class="small faint">Esc 최소화 · Space 일시정지</div>`;
 }
+// 끝내기 화면: 기본은 '계획 없이 한 일'로 실제 레인에 기록, 원하면 그날 계획 블록을 골라 붙인다
+function planOptions(day, curId){
+  const list = S.blocks.filter(v=>blockDay(v)===day && v.type!=='Personal' && (!v.done || v.id===curId))
+    .sort((a,c)=>a.start<c.start?-1:1);
+  return list.map(v=>`<option value="${v.id}" ${v.id===curId?'selected':''}>${hasTime(v.start)?hm(parse(v.start)):'종일'} · ${esc(v.name)}${v.done?' ✓':''}</option>`).join('');
+}
+const objOptions = cur => opts(S.objectives.filter(o=>!['Achieved','Missed','Dropped'].includes(o.status)||o.id===cur).map(o=>o.id), cur,
+  Object.fromEntries(S.objectives.map(o=>[o.id,o.name])), '— 목표 없음');
+function endLinkHTML(x, b){
+  return `<div class="endbox">
+    <label>계획과 연결</label>
+    <select id="end-link" data-act="end-link"><option value="">— 계획 없이 한 일 (실제에만 기록)</option>${planOptions(x.started_at.slice(0,10), x.block_id)}</select>
+    <div id="end-free" style="${b?'display:none':''}">
+      <label>무엇을 했나요</label><input id="end-name" placeholder="자유 집중" value="${esc(x.name||'')}">
+      <div class="two"><div><label>카테고리</label><select id="end-cat">${opts(CATS, x.category, CAT_KO, '—')}</select></div>
+        <div><label>목표</label><select id="end-obj">${objOptions(x.objective_id)}</select></div></div>
+    </div>
+    <label class="row" id="end-done-row" style="${b?'':'display:none;'}color:var(--text);margin-top:10px"><input type="checkbox" id="end-complete" style="width:auto" checked> 연결한 블록 완료로 표시</label>
+    <label>메모 (선택)</label><textarea id="end-note" style="min-height:56px"></textarea>
+  </div>`;
+}
+// 실제 레인의 기록 열기/추가 (타이머를 못 켰을 때 손으로 남기기)
+function sessionModal(x){
+  if(!x.ended_at && x.id){ openFocus(); return; }
+  const isNew = !x.id, day = x.started_at.slice(0,10);
+  openModal(`<h2>${isNew?'실제 기록 추가':'실제 기록'}</h2>
+    <label>계획과 연결</label>
+    <select id="x-block" data-act="x-block"><option value="">— 계획 없이 한 일</option>${planOptions(day, x.block_id)}</select>
+    <div id="x-free" style="${x.block_id?'display:none':''}">
+      <label>무엇을 했나요</label><input id="x-name" value="${esc(x.name||'')}" placeholder="예: 병리학 복습">
+      <div class="two"><div><label>카테고리</label><select id="x-cat">${opts(CATS, x.category, CAT_KO, '—')}</select></div>
+        <div><label>목표</label><select id="x-obj">${objOptions(x.objective_id)}</select></div></div>
+    </div>
+    <label class="row" id="x-done-row" style="${x.block_id?'':'display:none;'}color:var(--text);margin-top:10px"><input type="checkbox" id="x-done" style="width:auto" checked> 연결한 블록 완료로 표시</label>
+    <div class="three"><div><label>날짜</label><input type="date" id="x-day" value="${day}"></div>
+      <div><label>시작</label><input type="time" id="x-st" value="${x.started_at.slice(11,16)}"></div>
+      <div><label>끝</label><input type="time" id="x-en" value="${(x.ended_at||'').slice(11,16)}"></div></div>
+    <div class="two"><div><label>집중도</label><select id="x-rating">${opts(['1','2','3','4','5'], x.rating?String(x.rating):'', {1:'★',2:'★★',3:'★★★',4:'★★★★',5:'★★★★★'}, '—')}</select></div>
+      <div><label>중간에 쉰 시간 (분)</label><input type="number" min="0" id="x-pause" value="${Math.round((x.paused_ms||0)/6e4)}"></div></div>
+    <label>메모</label><textarea id="x-note">${esc(x.note||'')}</textarea>
+    ${isNew?'':`<div class="small faint" style="margin-top:6px">실제 ${fmtDur(sessionMs(x))}</div>`}
+    <div class="actions">${isNew?'':`<button class="danger" data-act="del-session" data-id="${x.id}">삭제</button>`}<span class="grow"></span>
+      <button data-act="close">취소</button><button class="primary" data-act="save-session" data-id="${x.id||''}">저장</button></div>`);
+}
+async function saveSession(id){
+  const g = k => document.getElementById(k);
+  const day = g('x-day').value, st = g('x-st').value, en = g('x-en').value;
+  if(!day || !st || !en) return toast('날짜와 시작·끝 시간을 적어주세요');
+  const started_at = `${day}T${st}:00`, ended_at = (en>st ? day : addDays(day,1)) + `T${en}:00`;
+  const link = g('x-block').value || null;
+  const body = {started_at, ended_at, block_id:link, paused_ms:Math.max(0,+g('x-pause').value||0)*6e4,
+    rating:g('x-rating').value?+g('x-rating').value:null, note:g('x-note').value,
+    name: link?null:(g('x-name').value.trim()||'자유 집중'), category: link?null:(g('x-cat').value||null), objective_id: link?null:(g('x-obj').value||null)};
+  id ? await api('PATCH','/sessions/'+id, body) : await api('POST','/sessions', body);
+  if(link && g('x-done').checked) await api('PATCH','/blocks/'+link, {done:true});
+  closeModal(); await load();
+}
 let endRating=null;
 async function focusAction(a){
   if(a==='f-pause'||a==='f-resume'){ await api('POST','/focus/'+(a==='f-pause'?'pause':'resume')); await load(); drawFocus(); }
   if(a==='f-end'){ endRating=null; drawFocus(true); }
   if(a==='end-cancel'){ const f=document.getElementById('focus'); f.dataset.mode='run'; f.dataset.key=''; drawFocus(); }
   if(a==='end-save'){
-    await api('POST','/focus/end',{rating:endRating, note:document.getElementById('end-note').value, complete:document.getElementById('end-complete')?.checked});
+    const g = id => document.getElementById(id), link = g('end-link').value;
+    await api('POST','/focus/end',{rating:endRating, note:g('end-note').value, block_id:link, complete:!!link && g('end-complete').checked,
+      name:g('end-name').value.trim(), category:g('end-cat').value, objective_id:g('end-obj').value});
     stopNoise(); Object.assign(document.getElementById('focus').dataset,{mode:'',key:''}); closeFocus(); await load(); toast('세션 저장됨');
   }
   if(a==='f-min') closeFocus();
@@ -848,7 +982,7 @@ async function focusAction(a){
 function renderFocusBar(){
   const x=activeSession(); const bar=document.getElementById('focusbar'); bar.classList.toggle('on',!!x);
   if(!x) return; const b=S.blocks.find(v=>v.id===x.block_id);
-  document.getElementById('fbName').textContent = (b?.name||'자유 집중') + (x.paused_at?' (일시정지)':'');
+  document.getElementById('fbName').textContent = sessName(x) + (x.paused_at?' (일시정지)':'');
   document.getElementById('fbTime').textContent = fmtClock(sessionMs(x));
 }
 setInterval(()=>{ if(activeSession()) renderFocusBar(); }, 1000);
@@ -868,9 +1002,11 @@ document.getElementById('modalBg').addEventListener('mousedown', e => { if(e.tar
 
 document.addEventListener('click', async e => {
   const slot = e.target.closest('.slot');
+  if(slot && slot.dataset.lane==='act'){ const h=+slot.dataset.h, d=slot.dataset.day;
+    return sessionModal({started_at:`${d}T${pad(h)}:00:00`, ended_at:`${d}T${pad(Math.min(23,h+1))}:${h+1>23?'59':'00'}:00`}); }
   if(slot){ const h=+slot.dataset.h; return blockModal({start:slot.dataset.day+'T'+pad(h)+':00', end:slot.dataset.day+'T'+pad(Math.min(23,h+1))+':'+(h+1>23?'59':'00'), type:'Focus block'}); }
   const blk = e.target.closest('.blk, .allday .item');
-  if(blk){ return blockModal(S.blocks.find(b=>b.id===blk.dataset.id)); }
+  if(blk){ return blk.dataset.sid ? sessionModal(S.sessions.find(x=>x.id===blk.dataset.sid)) : blockModal(S.blocks.find(b=>b.id===blk.dataset.id)); }
   const el = e.target.closest('[data-act]'); if(!el) return;
   const a = el.dataset.act, id = el.dataset.id;
   if(el.tagName==='SELECT'||el.tagName==='INPUT' && el.type!=='checkbox') return;
@@ -906,6 +1042,9 @@ document.addEventListener('click', async e => {
         wins:document.getElementById('rv-wins').value, lessons:document.getElementById('rv-lessons').value, next:document.getElementById('rv-next').value});
       await load(); toast('리뷰 저장됨'); break; }
     case 'menu': menuModal(); break;
+    case 'save-session': saveSession(id); break;
+    case 'del-session': if(confirm('이 실제 기록을 삭제할까요?')){ await api('DELETE','/sessions/'+id); closeModal(); load(); } break;
+    case 'week-dual': UI.weekDual=!UI.weekDual; try{localStorage.setItem('dw.weekDual', UI.weekDual?'1':'0')}catch(_){}; render(); break;
     case 'login': case 'signup': authAction(a); break;
     case 'export': exportFile(); break;
     case 'sync': closeModal(); await load(); toast('동기화됨'); break;
@@ -918,6 +1057,9 @@ document.addEventListener('change', async e => {
   const el=e.target; const a=el.dataset?.act;
   if(a==='obj-status'){ await api('PATCH','/objectives/'+el.dataset.id,{status:el.value}); load(); }
   if(a==='pick-season'){ UI.seasonId=el.value; render(); }
+  if(a==='end-link' || a==='x-block'){ const p = a==='end-link' ? 'end' : 'x';
+    document.getElementById(p+'-free').style.display = el.value ? 'none' : '';
+    document.getElementById(p+'-done-row').style.display = el.value ? '' : 'none'; }
   if(a==='weekly-goal'){ await api('POST','/settings',{weekly_goal_h:Math.max(1,+el.value||20)}); load(); }
 });
 document.addEventListener('keydown', e => {

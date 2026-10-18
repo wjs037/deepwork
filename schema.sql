@@ -23,7 +23,8 @@ create table if not exists focus_sessions (
   id text primary key default replace(gen_random_uuid()::text,'-',''), user_id uuid not null default auth.uid() references auth.users on delete cascade,
   block_id text references blocks(id) on delete cascade,
   started_at text not null, ended_at text, paused_at text, paused_ms bigint default 0,
-  rating int, note text default ''
+  rating int, note text default '',
+  name text, category text, objective_id text references objectives(id) on delete set null
 );
 create table if not exists reviews (
   id text primary key default replace(gen_random_uuid()::text,'-',''), user_id uuid not null default auth.uid() references auth.users on delete cascade,
