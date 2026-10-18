@@ -322,7 +322,9 @@ async function authAction(kind){
   const msg=document.getElementById('a-msg');
   if(!email || password.length<6){ msg.textContent='이메일과 6자 이상 비밀번호를 적어주세요'; return; }
   msg.textContent='…';
-  const {data, error} = kind==='signup' ? await sb.auth.signUp({email, password}) : await sb.auth.signInWithPassword({email, password});
+  const {data, error} = kind==='signup'
+    ? await sb.auth.signUp({email, password, options:{emailRedirectTo: location.origin + location.pathname}})
+    : await sb.auth.signInWithPassword({email, password});
   if(error){ msg.textContent = error.message; return; }
   if(kind==='signup' && !data.session){ msg.textContent='확인 메일을 보냈어요. 메일의 링크를 누른 뒤 여기서 로그인하세요.'; return; }
   boot();
